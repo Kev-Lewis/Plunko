@@ -1,0 +1,77 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - Peg
+  - Ball
+  - Ground
+  - multiplier
+  - BlackHole
+  - AmmoPlus
+  - AmmoMinus
+  - MultiHitPeg
+  - wall
+  - slide
+  - ok
+  - new_multiplier
+  - x2
+  - ArrowLeft
+  - ArrowDownLeft
+  - ArrowUpLeft
+  - ArrowUpRight
+  - ArrowRight
+  - ArrowDownRight
+  - LauncherRight
+  - LauncherLeft
+  - arrowDownLeft
+  - TwoHitPeg
+  - Nuke
+  - TutorialPeg
+  - TutorialTwoHitPeg
+  - TutorialMultiHit
+  - TutArrowProj
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - EnemyLayer
+  - post processing
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: ParticleLayer
+    uniqueID: 3031034463
+    locked: 0
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: UILayer
+    uniqueID: 425172317
+    locked: 0

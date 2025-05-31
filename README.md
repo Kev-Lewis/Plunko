@@ -1,11 +1,11 @@
-# Plunko
-A Peggle Inspired mobile game made in Unity.
-- Procedurally generated levels
+# Plunko-V2
+A re-imagining of Plunko, aiming to accomplish the following:
+- Seed-based randomization and updated RNG generation
 
-- Randomized spawning
+- Updated UI
 
-- Physics based dropping mechanics
+- Updated Peg unlocking system and new classifications
 
-- Diverse range of pegs and abilities
+- Spawning pattern reworks and potential boss patterns
 
-You'll never get tired hearing that satisfying pop as each play is a fresh and new experience! Compete to see how high of a score you can get between you and your friends!
+- Daily challenge and leaderboard

@@ -24,6 +24,8 @@ public class RunSaveData
     public List<BoardObjectSaveData> boardObjects = new List<BoardObjectSaveData>();
     public List<PlanetSaveData> planets = new List<PlanetSaveData>();
 
+    public List<PegWeightSaveData> pegWeightBonuses = new List<PegWeightSaveData>();
+
     public string savedAt;
 }
 
@@ -43,4 +45,11 @@ public class PlanetSaveData
     public Vector3 position;
     public Vector3 scale;
     public float moveSpeed;
+}
+
+[Serializable]
+public class PegWeightSaveData
+{
+    public string saveId;
+    public int bonusWeight;
 }

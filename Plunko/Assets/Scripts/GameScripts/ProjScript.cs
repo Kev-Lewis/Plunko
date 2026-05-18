@@ -305,7 +305,7 @@ public class ProjScript : MonoBehaviour
 
         Shooter.shooting = false;
 
-        if (spawn != null && spawn.spawnCount < 1) {
+        if (spawn != null && spawn.IsBoardCleared()) {
             ClearLevel();
         }
 

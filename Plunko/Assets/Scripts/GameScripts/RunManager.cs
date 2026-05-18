@@ -222,6 +222,7 @@ public class RunManager : MonoBehaviour
         if (spawner != null) {
             spawner.StartNewSeededRun(currentSeed, false);
             spawner.SetLevelsCleared(loadedData.levelsCleared);
+            spawner.RestoreSpecialPegWeightBonuses(loadedData.pegWeightBonuses);
 
             spawner.ClearCurrentBoard();
 
@@ -347,6 +348,7 @@ public class RunManager : MonoBehaviour
             data.currentBoardPattern = spawner.GetCurrentBoardPatternName();
             data.unlockedPegNames = spawner.GetUnlockedPegNames();
             data.boardObjects = spawner.GetCurrentBoardState();
+            data.pegWeightBonuses = spawner.GetSpecialPegWeightBonuses();
         }
         else {
             data.levelNumber = 1;
@@ -354,6 +356,7 @@ public class RunManager : MonoBehaviour
             data.currentBoardPattern = "";
             data.unlockedPegNames = new List<string>();
             data.boardObjects = new List<BoardObjectSaveData>();
+            data.pegWeightBonuses = new List<PegWeightSaveData>();
         }
 
         data.totalScore = Shooter.totalScore;

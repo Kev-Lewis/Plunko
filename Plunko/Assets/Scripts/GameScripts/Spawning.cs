@@ -87,6 +87,9 @@ public class Spawning : MonoBehaviour
     private readonly List<GameObject> unlockedPegs = new List<GameObject>();
     private readonly List<GameObject> unlockPool = new List<GameObject>();
 
+    // special peg weighting
+    private readonly Dictionary<string, int> specialPegWeightBonuses = new Dictionary<string, int>();
+
     private static readonly BoardPatterns[] defaultPatterns =
     {
         BoardPatterns.HardSlide,
@@ -285,6 +288,7 @@ public class Spawning : MonoBehaviour
         InitializeRandom();
         levelsCleared = 0;
         nextNormalSide = SpawnSide.Left;
+        specialPegWeightBonuses.Clear();
         resetUnlockedPegs();
     }
 
@@ -404,32 +408,22 @@ public class Spawning : MonoBehaviour
 
     private int SpawnSlideRamp() {
         int y = Range(0, 2);
-        int roll = Range(0, 100);
         bool cornerSpawned = false;
-
-        SlideMode mode;
-        if (roll < 35) mode = SlideMode.Both;
-        else if (roll < 60) mode = SlideMode.LeftOnly;
-        else if (roll < 85) mode = SlideMode.RightOnly;
-        else mode = SlideMode.None;
-
-        if (mode == SlideMode.None) {
-            return y;
-        }
 
         for (int x = 0; x < xGridSize; x++) {
             slidePos[x] = y;
 
             if (y <= yGridSize - 3) {
-                SpawnSliderByMode(x, y, mode, false);
+                SpawnSliderPair(x, y);
                 y++;
             }
             else if (!cornerSpawned) {
-                SpawnSliderByMode(x, y, mode, true);
+                SpawnSlideCorner(SpawnSide.Left, x, y);
+                SpawnSlideCorner(SpawnSide.Right, x, y);
                 cornerSpawned = true;
             }
             else {
-                SpawnSliderByMode(x, y, mode, false);
+                SpawnSliderPair(x, y);
             }
         }
 
@@ -590,15 +584,44 @@ public class Spawning : MonoBehaviour
         }
     }
 
-    private void SpawnDenseCenterPeg(GameObject prefab, float worldX, float y) {
+    private GameObject PickDenseFieldPeg() {
+        int specialChance = Mathf.Clamp(20 + levelsCleared * 2, 20, 50);
+        bool useNormalPeg = Range(0, 100) >= specialChance || unlockedPegs.Count == 0;
+
+        if (useNormalPeg) {
+            return normalPeg;
+        }
+
+        GameObject specialPeg = PickWeightedUnlockedPeg();
+
+        if (specialPeg == null) {
+            return normalPeg;
+        }
+
+        if (specialPeg == arrowPegLeft) {
+            GameObject[] arrows = { arrowPegLeft, arrowPegUpLeft, arrowPegRight, arrowPegUpRight };
+            return arrows[Range(0, arrows.Length)];
+        }
+
+        return specialPeg;
+    }
+
+    private void SpawnDenseCenterPeg(float worldX, float y) {
+        GameObject prefab = PickDenseFieldPeg();
+
         if (prefab == null) {
             return;
         }
 
         float worldY = zeroY - y;
 
-        Instantiate(prefab, new Vector3(worldX, worldY, 0f), Quaternion.identity);
-        spawnCount++;
+        Instantiate(
+            prefab,
+            new Vector3(worldX, worldY, 0f),
+            prefab.transform.rotation
+        );
+
+        spawnCount += GetSpawnCountValueForTag(prefab.tag);
     }
 
     public void SpawnDenseField() {
@@ -631,7 +654,7 @@ public class Spawning : MonoBehaviour
 
             for (int i = 0; i < pegsInRow; i++) {
                 float x = startX + i * xSpacing + rowOffset;
-                SpawnDenseCenterPeg(normalPeg, x, y);
+                SpawnDenseCenterPeg(x, y);
             }
         }
     }
@@ -661,7 +684,12 @@ public class Spawning : MonoBehaviour
 
                 if (distance <= radius) {
                     if (distance == 0 && centerAlwaysSpecial && unlockedPegs.Count > 0) {
-                        GameObject specialPeg = unlockedPegs[Range(0, unlockedPegs.Count)];
+                        GameObject specialPeg = PickWeightedUnlockedPeg();
+
+                        if (specialPeg == null) {
+                            TrySpawnCell(x, y);
+                            continue;
+                        }
 
                         SpawnSingleSpecial(specialPeg, x, y, SpawnSide.Left);
                         SpawnSinglePeg(normalPeg, x, y, SpawnSide.Right, Quaternion.identity);
@@ -706,7 +734,14 @@ public class Spawning : MonoBehaviour
             return;
         }
 
-        GameObject specialPeg = unlockedPegs[Range(0, unlockedPegs.Count)];
+        GameObject specialPeg = PickWeightedUnlockedPeg();
+
+        if (specialPeg == null) {
+            SpawnNormalPair(x, y);
+            spawnCount += 2;
+            return;
+        }
+
         SpawnSide specialSide = Opposite(nextNormalSide);
 
         SpawnSingleSpecial(specialPeg, x, y, specialSide);
@@ -842,7 +877,7 @@ public class Spawning : MonoBehaviour
     }
 
     public void reduceCount() {
-        spawnCount--;
+        spawnCount = Mathf.Max(0, spawnCount - 1);
     }
 
     public void addLevelsCleared() {
@@ -951,6 +986,8 @@ public class Spawning : MonoBehaviour
 
             spawnCount += GetSpawnCountValueForTag(restoredObject.tag);
         }
+
+        RefreshSpawnCountFromScene();
 
         Debug.Log("Board restore complete. spawnCount: " + spawnCount);
         return true;
@@ -1083,6 +1120,9 @@ public class Spawning : MonoBehaviour
                 return arrowPegUpLeft;
             case "ArrowUpRight":
                 return arrowPegUpRight;
+            case "Pyramid":
+            case "PyramidPeg":
+                return pyramidPeg;
             default:
                 return null;
         }
@@ -1097,22 +1137,221 @@ public class Spawning : MonoBehaviour
     }
 
     private int GetSpawnCountValueForTag(string objectTag) {
-        if (objectTag == "MultiHitPeg" || objectTag == "TwoHitPeg") {
-            return 2;
+        switch (objectTag) {
+            case "Peg":
+            case "MultiHitPeg":
+            case "TwoHitPeg":
+            case "Pyramid":
+            case "PyramidPeg":
+                return 1;
+
+            default:
+                return 0;
+        }
+    }
+
+    public bool IsBoardCleared() {
+        return RefreshSpawnCountFromScene() <= 0;
+    }
+
+    public int RefreshSpawnCountFromScene() {
+        spawnCount = CountRemainingClearableObjects();
+        return spawnCount;
+    }
+
+    private int CountRemainingClearableObjects() {
+        int count = 0;
+        pegsToDelete[] objects = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete obj in objects) {
+            if (obj == null || !obj.gameObject.activeInHierarchy) {
+                continue;
+            }
+
+            if (CountsTowardLevelClear(obj.gameObject)) {
+                count++;
+            }
         }
 
-        if (objectTag == "Peg") {
-            return 1;
+        return count;
+    }
+
+    private bool CountsTowardLevelClear(GameObject obj) {
+        switch (obj.tag) {
+            case "Peg":
+            case "MultiHitPeg":
+            case "TwoHitPeg":
+            case "Pyramid":
+            case "PyramidPeg":
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private GameObject PickWeightedUnlockedPeg() {
+        if (unlockedPegs.Count == 0) {
+            return null;
         }
 
-        if (objectTag == "AmmoPlus" || objectTag == "AmmoMinus" || objectTag == "BlackHole" || objectTag == "x2") {
-            return 1;
+        int totalWeight = 0;
+
+        for (int i = 0; i < unlockedPegs.Count; i++) {
+            totalWeight += GetCurrentSpecialPegWeight(unlockedPegs[i]);
         }
 
-        if (objectTag == "ArrowLeft" || objectTag == "ArrowRight" || objectTag == "ArrowUpLeft" || objectTag == "ArrowUpRight") {
-            return 1;
+        if (totalWeight <= 0) {
+            return unlockedPegs[Range(0, unlockedPegs.Count)];
         }
 
-        return 0;
+        int roll = Range(0, totalWeight);
+        int runningWeight = 0;
+
+        for (int i = 0; i < unlockedPegs.Count; i++) {
+            GameObject peg = unlockedPegs[i];
+            runningWeight += GetCurrentSpecialPegWeight(peg);
+
+            if (roll < runningWeight) {
+                return peg;
+            }
+        }
+
+        return unlockedPegs[unlockedPegs.Count - 1];
+    }
+
+    private int GetCurrentSpecialPegWeight(GameObject peg) {
+        if (peg == null) {
+            return 0;
+        }
+
+        string saveId = GetSaveIdForPrefab(peg);
+        int bonusWeight = 0;
+
+        if (specialPegWeightBonuses.ContainsKey(saveId)) {
+            bonusWeight = specialPegWeightBonuses[saveId];
+        }
+
+        return Mathf.Max(0, GetBaseSpecialPegWeight(peg) + bonusWeight);
+    }
+
+    private int GetBaseSpecialPegWeight(GameObject peg) {
+        if (peg == null) {
+            return 0;
+        }
+
+        if (peg == ammoPlusPeg) {
+            return 30;
+        }
+
+        if (peg == ammoMinusPeg) {
+            return 18;
+        }
+
+        if (peg == x2Peg) {
+            return 12;
+        }
+
+        if (peg == multiHitPeg) {
+            return 12;
+        }
+
+        if (peg == twoHitPeg) {
+            return 12;
+        }
+
+        if (peg == blackholePeg) {
+            return 8;
+        }
+
+        if (peg == pyramidPeg) {
+            return 8;
+        }
+
+        if (peg == arrowPegLeft) {
+            return 10;
+        }
+
+        return 10;
+    }
+
+    private string GetSaveIdForPrefab(GameObject prefab) {
+        if (prefab == null) {
+            return "";
+        }
+
+        return prefab.name.Replace("(Clone)", "").Trim();
+    }
+
+    public void ModifySpecialPegWeight(string saveId, int amount) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return;
+        }
+
+        if (!specialPegWeightBonuses.ContainsKey(saveId)) {
+            specialPegWeightBonuses[saveId] = 0;
+        }
+
+        specialPegWeightBonuses[saveId] = Mathf.Clamp(
+            specialPegWeightBonuses[saveId] + amount,
+            -100,
+            100
+        );
+    }
+
+    public void SetSpecialPegWeightBonus(string saveId, int bonusWeight) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return;
+        }
+
+        specialPegWeightBonuses[saveId] = Mathf.Clamp(bonusWeight, -100, 100);
+    }
+
+    public int GetSpecialPegWeightBonus(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return 0;
+        }
+
+        if (!specialPegWeightBonuses.ContainsKey(saveId)) {
+            return 0;
+        }
+
+        return specialPegWeightBonuses[saveId];
+    }
+
+    public List<PegWeightSaveData> GetSpecialPegWeightBonuses() {
+        List<PegWeightSaveData> savedWeights = new List<PegWeightSaveData>();
+
+        foreach (KeyValuePair<string, int> pair in specialPegWeightBonuses) {
+            if (pair.Value == 0) {
+                continue;
+            }
+
+            PegWeightSaveData data = new PegWeightSaveData();
+            data.saveId = pair.Key;
+            data.bonusWeight = pair.Value;
+
+            savedWeights.Add(data);
+        }
+
+        return savedWeights;
+    }
+
+    public void RestoreSpecialPegWeightBonuses(List<PegWeightSaveData> savedWeights) {
+        specialPegWeightBonuses.Clear();
+
+        if (savedWeights == null) {
+            return;
+        }
+
+        for (int i = 0; i < savedWeights.Count; i++) {
+            PegWeightSaveData data = savedWeights[i];
+
+            if (data == null || string.IsNullOrWhiteSpace(data.saveId)) {
+                continue;
+            }
+
+            specialPegWeightBonuses[data.saveId] = data.bonusWeight;
+        }
     }
 }

@@ -430,6 +430,15 @@ public class Shooter : MonoBehaviour
         }
     }
 
+    // ignore ground for trace
+    private bool ShouldStopTraceAtHit(RaycastHit2D hit) {
+        if (hit.collider == null) {
+            return false;
+        }
+
+        return hit.collider.CompareTag("Ground");
+    }
+
     private void UpdateCollisionTrajectoryPreview() {
         Vector2 position = firePoint.position;
         Vector2 velocity = (Vector2)firePoint.right * projSpeed;
@@ -456,6 +465,10 @@ public class Shooter : MonoBehaviour
 
                 SetTrajectoryPoint(visiblePointIndex, hitPosition);
                 visiblePointIndex++;
+
+                if (ShouldStopTraceAtHit(hit)) {
+                    break;
+                }
 
                 velocity = Vector2.Reflect(nextVelocity, hit.normal) * traceBounceDamping;
                 position = hitPosition + hit.normal * traceSkinWidth;

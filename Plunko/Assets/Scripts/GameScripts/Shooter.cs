@@ -1127,4 +1127,89 @@ public class Shooter : MonoBehaviour
         bonus500Awarded = false;
         bonus1000Awarded = false;
     }
+
+    public List<PlanetSaveData> GetCurrentPlanetState() {
+        List<PlanetSaveData> planetData = new List<PlanetSaveData>();
+
+        planetScript[] activePlanets = FindObjectsOfType<planetScript>();
+
+        foreach (planetScript planet in activePlanets) {
+            if (planet == null || !planet.gameObject.activeInHierarchy) {
+                continue;
+            }
+
+            PlanetSaveData data = new PlanetSaveData();
+
+            data.saveId = GetSaveIdFromObjectName(planet.gameObject.name);
+            data.position = planet.transform.position;
+            data.scale = planet.transform.localScale;
+            data.moveSpeed = planet.GetMoveSpeed();
+
+            planetData.Add(data);
+        }
+
+        return planetData;
+    }
+
+    public void RestorePlanetState(List<PlanetSaveData> savedPlanets) {
+        ClearActivePlanets();
+
+        if (savedPlanets == null || savedPlanets.Count == 0) {
+            return;
+        }
+
+        for (int i = 0; i < savedPlanets.Count; i++) {
+            PlanetSaveData data = savedPlanets[i];
+            GameObject prefab = GetPlanetPrefabBySaveId(data.saveId);
+
+            if (prefab == null) {
+                Debug.LogWarning("No planet prefab mapped for saveId: " + data.saveId);
+                continue;
+            }
+
+            GameObject restoredPlanet = Instantiate(prefab, data.position, Quaternion.identity);
+            restoredPlanet.transform.localScale = data.scale;
+
+            planetScript planet = restoredPlanet.GetComponent<planetScript>();
+            if (planet != null) {
+                planet.SetMoveSpeed(data.moveSpeed);
+            }
+        }
+    }
+
+    private void ClearActivePlanets() {
+        planetScript[] activePlanets = FindObjectsOfType<planetScript>();
+
+        foreach (planetScript planet in activePlanets) {
+            if (planet != null) {
+                Destroy(planet.gameObject);
+            }
+        }
+    }
+
+    private GameObject GetPlanetPrefabBySaveId(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId) || planets == null) {
+            return null;
+        }
+
+        for (int i = 0; i < planets.Length; i++) {
+            if (planets[i] == null) {
+                continue;
+            }
+
+            if (string.Equals(planets[i].name, saveId, System.StringComparison.OrdinalIgnoreCase)) {
+                return planets[i];
+            }
+        }
+
+        return null;
+    }
+
+    private string GetSaveIdFromObjectName(string objectName) {
+        if (string.IsNullOrWhiteSpace(objectName)) {
+            return "";
+        }
+
+        return objectName.Replace("(Clone)", "").Trim();
+    }
 }

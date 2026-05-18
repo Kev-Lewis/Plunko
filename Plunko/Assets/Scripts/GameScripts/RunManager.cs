@@ -99,6 +99,8 @@ public class RunManager : MonoBehaviour
             shooter.ammoCount = startingAmmo;
             shooter.prevScore = 0;
             shooter.resetLocalScore();
+
+            shooter.RestorePlanetState(new List<PlanetSaveData>());
         }
 
         if (spawner != null) {
@@ -214,6 +216,7 @@ public class RunManager : MonoBehaviour
         if (shooter != null) {
             shooter.ammoCount = loadedData.ammoCount;
             shooter.prevScore = loadedData.previousScore;
+            shooter.RestorePlanetState(loadedData.planets);
         }
 
         if (spawner != null) {
@@ -361,10 +364,12 @@ public class RunManager : MonoBehaviour
         if (shooter != null) {
             data.ammoCount = shooter.ammoCount;
             data.previousScore = shooter.prevScore;
+            data.planets = shooter.GetCurrentPlanetState();
         }
         else {
             data.ammoCount = 0;
             data.previousScore = 0;
+            data.planets = new List<PlanetSaveData>();
         }
 
         data.activeUpgradeIds = new List<string>();

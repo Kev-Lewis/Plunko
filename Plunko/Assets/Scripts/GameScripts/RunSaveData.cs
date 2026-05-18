@@ -22,6 +22,7 @@ public class RunSaveData
     public List<string> unlockedPegNames = new List<string>();
     public List<string> activeUpgradeIds = new List<string>();
     public List<BoardObjectSaveData> boardObjects = new List<BoardObjectSaveData>();
+    public List<PlanetSaveData> planets = new List<PlanetSaveData>();
 
     public string savedAt;
 }
@@ -33,4 +34,13 @@ public class BoardObjectSaveData
     public string objectTag;
     public Vector3 position;
     public Vector3 rotation;
+}
+
+[Serializable]
+public class PlanetSaveData
+{
+    public string saveId;
+    public Vector3 position;
+    public Vector3 scale;
+    public float moveSpeed;
 }

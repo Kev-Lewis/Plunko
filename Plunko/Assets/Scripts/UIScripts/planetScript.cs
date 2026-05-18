@@ -16,10 +16,9 @@ public class planetScript : MonoBehaviour
     private float moveSpeed;
 
     private void Start() {
-        moveSpeed = Random.Range(minSpeed, maxSpeed);
-
-        float randomSize = Random.Range(minSize, maxSize);
-        transform.localScale = new Vector2(randomSize, randomSize);
+        if (moveSpeed <= 0f) {
+            RandomizePlanet();
+        }
     }
 
     private void Update() {
@@ -28,5 +27,20 @@ public class planetScript : MonoBehaviour
         if (transform.position.x > destroyXPosition) {
             Destroy(gameObject);
         }
+    }
+
+    private void RandomizePlanet() {
+        moveSpeed = Random.Range(minSpeed, maxSpeed);
+
+        float randomSize = Random.Range(minSize, maxSize);
+        transform.localScale = new Vector2(randomSize, randomSize);
+    }
+
+    public float GetMoveSpeed() {
+        return moveSpeed;
+    }
+
+    public void SetMoveSpeed(float speed) {
+        moveSpeed = speed;
     }
 }

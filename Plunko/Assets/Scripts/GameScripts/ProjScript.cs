@@ -38,6 +38,7 @@ public class ProjScript : MonoBehaviour
     private float startingPitch;
     private int tempScore;
     private int totalPegCounter;
+    private bool groundHitProcessed;
 
     private static int currentLevel = 1;
 
@@ -78,6 +79,7 @@ public class ProjScript : MonoBehaviour
 
     private Gradient BuildCustomTrailGradient() {
         Gradient gradient = new Gradient();
+
         gradient.SetKeys(
             new GradientColorKey[] {
                 new GradientColorKey(Color.gray, 0.0f),
@@ -284,6 +286,14 @@ public class ProjScript : MonoBehaviour
     }
 
     private void HitGround() {
+        if (groundHitProcessed) {
+            return;
+        }
+
+        groundHitProcessed = true;
+
+        Debug.Log("Projectile hit ground. RunManager exists: " + (RunManager.Instance != null));
+
         Shooter.totalPegsToSave += totalPegCounter;
         ResetPopPitch();
 
@@ -303,14 +313,24 @@ public class ProjScript : MonoBehaviour
             SaveSystem.Save(gameData);
         }
 
-        Destroy(gameObject);
-
         if (shoot != null && shoot.ammoCount <= 0) {
             TriggerGameOver();
+
+            if (RunManager.Instance != null) {
+                Debug.Log("Marking run finished from HitGround()");
+                RunManager.Instance.MarkRunFinishedNextFrame();
+            }
         }
         else {
             FinishShotNormally();
+
+            if (RunManager.Instance != null) {
+                Debug.Log("Saving run checkpoint from HitGround()");
+                RunManager.Instance.SaveRunCheckpointNextFrame();
+            }
         }
+
+        Destroy(gameObject);
     }
 
     private void ClearLevel() {
@@ -332,6 +352,7 @@ public class ProjScript : MonoBehaviour
         }
 
         PlaySound(levelClearAudio);
+
         Shooter.totalScore += 50 * currentLevel;
         currentLevel++;
         Shooter.totalLevelsToSave++;
@@ -342,8 +363,11 @@ public class ProjScript : MonoBehaviour
         Shooter.gameOver = true;
 
         ParticleSystem[] particleObjects = FindObjectsOfType<ParticleSystem>();
+
         foreach (ParticleSystem particleObject in particleObjects) {
-            Destroy(particleObject.gameObject);
+            if (particleObject != null) {
+                Destroy(particleObject.gameObject);
+            }
         }
 
         PlaySound(loseAudio);
@@ -436,6 +460,7 @@ public class ProjScript : MonoBehaviour
         }
 
         GameObject levelClearObject = GameObject.Find("levelclear");
+
         if (levelClearObject != null) {
             Instantiate(level_clear_ps, levelClearObject.transform.position, level_clear_ps.transform.rotation);
         }
@@ -447,6 +472,7 @@ public class ProjScript : MonoBehaviour
         }
 
         GameObject launcherObject = GameObject.Find(launcherName);
+
         if (launcherObject == null) {
             return;
         }
@@ -545,6 +571,7 @@ public class ProjScript : MonoBehaviour
 
     private IEnumerator deleteSlide(GameObject slide) {
         RegisterPegHit();
+
         yield return new WaitForSeconds(0.5f);
 
         if (slide != null) {

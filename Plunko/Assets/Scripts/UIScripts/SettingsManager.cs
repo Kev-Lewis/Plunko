@@ -6,226 +6,255 @@ using UnityEngine.SceneManagement;
 
 public class SettingsManager : MonoBehaviour
 {
-    // Settings UI
-    public GameObject SettingsCanvas;
-    public GameObject TutorialCanvas;
-    public GameObject CloseSettingsButton;
-    public GameObject SettingsGroup;
-    public GameObject AreYouSureGroup;
+    [Header("Settings UI")]
+    [SerializeField] private GameObject SettingsCanvas;
+    [SerializeField] private GameObject TutorialCanvas;
+    [SerializeField] private GameObject CloseSettingsButton;
+    [SerializeField] private GameObject SettingsGroup;
+    [SerializeField] private GameObject AreYouSureGroup;
 
-    // Audio Sources
-    public GameObject Audio_Player;
-    public GameObject SFX_Player;
-    private AudioSource[] audio_players;
-    private AudioSource[] sfx_players;
-    public AudioSource blipSelect;
+    [Header("Audio Groups")]
+    [SerializeField] private GameObject Audio_Player;
+    [SerializeField] private GameObject SFX_Player;
+    [SerializeField] private AudioSource blipSelect;
 
-    // Sliders
-    public Slider VolumeSlider;
-    public Slider EffectsSlider;
+    [Header("Sliders")]
+    [SerializeField] private Slider VolumeSlider;
+    [SerializeField] private Slider EffectsSlider;
 
-    // bool
+    [Header("Optional References")]
+    [SerializeField] private buttonScript bs;
+
+    private const string FirstPlayKey = "FirstPlay";
+    private const string VolumeValueKey = "VolumeValue";
+    private const string EffectsValueKey = "EffectsValue";
+
+    private AudioSource[] audioPlayers;
+    private AudioSource[] sfxPlayers;
+
     private bool settingsOpen;
     private bool tutorialOpen;
 
-    // other scripts
-    private Shooter shoot;
-    public buttonScript bs;
+    private void Start() {
+        CacheAudioSources();
+        LoadOrCreateAudioSettings();
+        UpdateAudioLevels();
+    }
 
-    void Start()
-    {
-        
-        audio_players = Audio_Player.GetComponentsInChildren<AudioSource>();
-        sfx_players = SFX_Player.GetComponentsInChildren<AudioSource>();
-        updateAudioLevels();
+    private void CacheAudioSources() {
+        audioPlayers = Audio_Player != null ? Audio_Player.GetComponentsInChildren<AudioSource>() : new AudioSource[0];
+        sfxPlayers = SFX_Player != null ? SFX_Player.GetComponentsInChildren<AudioSource>() : new AudioSource[0];
+    }
 
-        if (PlayerPrefs.GetFloat("FirstPlay") == 0)
-        {
-            PlayerPrefs.SetFloat("FirstPlay", 1);
+    private void LoadOrCreateAudioSettings() {
+        if (PlayerPrefs.GetFloat(FirstPlayKey) == 0) {
+            PlayerPrefs.SetFloat(FirstPlayKey, 1);
             LoadNewDefaults();
+            return;
         }
-        else
-        {
-            LoadValues();
-        }
+
+        LoadValues();
     }
 
-    // Open the tutorial menu
-    public void openTutorial()
-    {
-        TutorialCanvas.SetActive(true);
-        CloseSettingsButton.SetActive(false);
+    public void openTutorial() {
+        SetPanelActive(TutorialCanvas, true);
+        SetPanelActive(CloseSettingsButton, false);
+
         tutorialOpen = true;
-        blipSelect.Play();
+        PlaySelectSound();
     }
 
-    // Open the tutorial menu
-    public void closeTutorial()
-    {
-        TutorialCanvas.SetActive(false);
-        blipSelect.Play();
+    public void closeTutorial() {
+        SetPanelActive(TutorialCanvas, false);
+
+        PlaySelectSound();
         StartCoroutine(readyToPlay());
     }
 
-    public void areYouSureOpen()
-    {
-        blipSelect.Play();
-        SettingsGroup.SetActive(false);
-        AreYouSureGroup.SetActive(true);
+    public void areYouSureOpen() {
+        PlaySelectSound();
+
+        SetPanelActive(SettingsGroup, false);
+        SetPanelActive(AreYouSureGroup, true);
     }
 
-    public void areYouSureClose()
-    {
-        blipSelect.Play();
-        SettingsGroup.SetActive(true);
-        AreYouSureGroup.SetActive(false);
+    public void areYouSureClose() {
+        PlaySelectSound();
+
+        SetPanelActive(SettingsGroup, true);
+        SetPanelActive(AreYouSureGroup, false);
     }
 
-    IEnumerator readyToPlay()
-    {
+    private IEnumerator readyToPlay() {
         yield return new WaitForSeconds(0.5f);
+
         tutorialOpen = false;
-        CloseSettingsButton.SetActive(true);
+        SetPanelActive(CloseSettingsButton, true);
     }
 
-    public bool getTutorialOpen()
-    {
+    public bool getTutorialOpen() {
         return tutorialOpen;
     }
 
-    // Opens the settings menu
-    public void openSettings()
-    {
-        var particleObjects = FindObjectsOfType<ParticleSystem>();
-        foreach(var pO in particleObjects){
-            Destroy(pO.gameObject);
-        }
-        
-        if (!settingsOpen)
-        {
-            updateAudioLevels();
-            blipSelect.Play();
-            SettingsCanvas.SetActive(true);
-            settingsOpen = true;
-        }
-        else
-        {
-            updateAudioLevels();
-            blipSelect.Play();
-            SettingsCanvas.SetActive(false);
-            settingsOpen = false;
-        }
+    public void openSettings() {
+        DestroyActiveParticles();
+
+        settingsOpen = !settingsOpen;
+
+        UpdateAudioLevels();
+        PlaySelectSound();
+        SetPanelActive(SettingsCanvas, settingsOpen);
     }
 
-    public bool getSettingsOpen()
-    {
+    public bool getSettingsOpen() {
         return settingsOpen;
     }
 
-    public void openMenuSettings()
-    {
-        updateAudioLevels();
-        blipSelect.Play();
-        SettingsCanvas.SetActive(true);
+    public void openMenuSettings() {
+        settingsOpen = true;
+
+        UpdateAudioLevels();
+        PlaySelectSound();
+        SetPanelActive(SettingsCanvas, true);
     }
 
-    public void closeSettings()
-    {
-        updateAudioLevels();
-        blipSelect.Play();
-        SettingsCanvas.SetActive(false);
+    public void closeSettings() {
+        settingsOpen = false;
+
+        UpdateAudioLevels();
+        PlaySelectSound();
+        SetPanelActive(SettingsCanvas, false);
     }
 
-    // Slider Value for general sounds
-    public void Volume_Slider(float volume)
-    {
-        float volumeValue = volume;
-        if(SystemInfo.deviceType == DeviceType.Handheld){
-            PlayerPrefs.SetFloat("VolumeValue", volumeValue * .04f);
-        }
-        else{
-            PlayerPrefs.SetFloat("VolumeValue", volumeValue * .01f);
-        }
-        LoadValues();
+    public void Volume_Slider(float volume) {
+        float multiplier = SystemInfo.deviceType == DeviceType.Handheld ? 0.04f : 0.01f;
+        PlayerPrefs.SetFloat(VolumeValueKey, volume * multiplier);
+        PlayerPrefs.Save();
+
+        UpdateAudioLevels();
     }
 
-    // Slider Value for SFX
-    public void Effects_Slider(float volume)
-    {
-        float effectsValue = volume;
-        if(SystemInfo.deviceType == DeviceType.Handheld){
-            PlayerPrefs.SetFloat("EffectsValue", effectsValue * .4f);
-        }
-        else{
-            PlayerPrefs.SetFloat("EffectsValue", effectsValue * .2f);
-        }
-        LoadValues();
+    public void Effects_Slider(float volume) {
+        float multiplier = SystemInfo.deviceType == DeviceType.Handheld ? 0.4f : 0.2f;
+        PlayerPrefs.SetFloat(EffectsValueKey, volume * multiplier);
+        PlayerPrefs.Save();
+
+        UpdateAudioLevels();
     }
 
-    // Updates all audio levels
-    private void updateAudioLevels()
-    {
-        for (int i = 0; i < audio_players.Length; i++)
-        {
-            
-            audio_players[i].volume = PlayerPrefs.GetFloat("VolumeValue");
+    private void UpdateAudioLevels() {
+        float musicVolume = PlayerPrefs.GetFloat(VolumeValueKey);
+        float sfxVolume = PlayerPrefs.GetFloat(EffectsValueKey);
+
+        for (int i = 0; i < audioPlayers.Length; i++) {
+            if (audioPlayers[i] != null) {
+                audioPlayers[i].volume = musicVolume;
+            }
         }
-        for (int i = 0; i < sfx_players.Length; i++)
-        {
-            
-            sfx_players[i].volume = PlayerPrefs.GetFloat("EffectsValue");
+
+        for (int i = 0; i < sfxPlayers.Length; i++) {
+            if (sfxPlayers[i] != null) {
+                sfxPlayers[i].volume = sfxVolume;
+            }
         }
     }
 
-    // Load the values from PlayerPref
-    private void LoadValues()
-    {
-        float volumeValue = PlayerPrefs.GetFloat("VolumeValue");
-        if(SystemInfo.deviceType == DeviceType.Handheld){
-            VolumeSlider.value = volumeValue / .04f;
-        }
-        else{
-            VolumeSlider.value = volumeValue / .01f;
+    private void LoadValues() {
+        float musicMultiplier = SystemInfo.deviceType == DeviceType.Handheld ? 0.04f : 0.01f;
+        float sfxMultiplier = SystemInfo.deviceType == DeviceType.Handheld ? 0.4f : 0.2f;
+
+        float savedMusicVolume = PlayerPrefs.GetFloat(VolumeValueKey);
+        float savedSfxVolume = PlayerPrefs.GetFloat(EffectsValueKey);
+
+        if (VolumeSlider != null) {
+            VolumeSlider.value = savedMusicVolume / musicMultiplier;
         }
 
-        float effectsValue = PlayerPrefs.GetFloat("EffectsValue");
-        if(SystemInfo.deviceType == DeviceType.Handheld){
-            EffectsSlider.value = effectsValue / .4f;
-        }
-        else{
-            EffectsSlider.value = effectsValue / .2f;
+        if (EffectsSlider != null) {
+            EffectsSlider.value = savedSfxVolume / sfxMultiplier;
         }
 
-        updateAudioLevels();
+        UpdateAudioLevels();
     }
 
-    // Load new defaults on first play
-    private void LoadNewDefaults()
-    {
-        float volumeValue = .25f;
-        VolumeSlider.value = volumeValue;
+    private void LoadNewDefaults() {
+        float defaultSliderValue = 0.25f;
 
-        float effectsValue = .25f;
-        EffectsSlider.value = effectsValue;
-
-        updateAudioLevels();
-    }
-
-    public void MainMenu()
-    {
-        updateAudioLevels();
-        if(SceneManager.GetActiveScene().name == "infiniteLevel")
-        {
-            bs.cleanGame();
-            shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
-            shoot.resetLocalScore();
+        if (VolumeSlider != null) {
+            VolumeSlider.value = defaultSliderValue;
         }
-        blipSelect.Play();
-        StartCoroutine(changeScene("Menu", blipSelect.clip.length));
+
+        if (EffectsSlider != null) {
+            EffectsSlider.value = defaultSliderValue;
+        }
+
+        float musicMultiplier = SystemInfo.deviceType == DeviceType.Handheld ? 0.04f : 0.01f;
+        float sfxMultiplier = SystemInfo.deviceType == DeviceType.Handheld ? 0.4f : 0.2f;
+
+        PlayerPrefs.SetFloat(VolumeValueKey, defaultSliderValue * musicMultiplier);
+        PlayerPrefs.SetFloat(EffectsValueKey, defaultSliderValue * sfxMultiplier);
+        PlayerPrefs.Save();
+
+        UpdateAudioLevels();
     }
 
-    IEnumerator changeScene(string scene, float time)
-    {
+    public void MainMenu() {
+        UpdateAudioLevels();
+
+        if (SceneManager.GetActiveScene().name == "infiniteLevel") {
+            SaveRunBeforeLeavingLevel();
+        }
+
+        PlaySelectSound();
+        StartCoroutine(changeScene("Menu", GetSelectSoundLength()));
+    }
+
+    private void SaveRunBeforeLeavingLevel() {
+        if (RunManager.Instance == null) {
+            return;
+        }
+
+        if (Shooter.gameOver) {
+            RunManager.Instance.MarkRunFinished();
+            return;
+        }
+
+        if (!Shooter.shooting) {
+            RunManager.Instance.SaveRunCheckpoint();
+        }
+    }
+
+    private void DestroyActiveParticles() {
+        ParticleSystem[] particleObjects = FindObjectsOfType<ParticleSystem>();
+
+        foreach (ParticleSystem particleObject in particleObjects) {
+            if (particleObject != null) {
+                Destroy(particleObject.gameObject);
+            }
+        }
+    }
+
+    private void SetPanelActive(GameObject panel, bool active) {
+        if (panel != null) {
+            panel.SetActive(active);
+        }
+    }
+
+    private void PlaySelectSound() {
+        if (blipSelect != null) {
+            blipSelect.Play();
+        }
+    }
+
+    private float GetSelectSoundLength() {
+        if (blipSelect != null && blipSelect.clip != null) {
+            return blipSelect.clip.length;
+        }
+
+        return 0f;
+    }
+
+    private IEnumerator changeScene(string scene, float time) {
         yield return new WaitForSeconds(time);
         SceneManager.LoadScene(scene);
     }

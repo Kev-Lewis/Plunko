@@ -5,66 +5,226 @@ using UnityEngine.SceneManagement;
 
 public class buttonScript : MonoBehaviour
 {
+    [Header("Optional UI Buttons")]
+    [SerializeField] private GameObject newRunButton;
+
     private Shooter shoot;
     private Spawning spawn;
     private GameObject settingsButton;
-    private AudioSource audioClip;
+    private AudioSource levelClearAudio;
 
     private void Start() {
-        settingsButton = GameObject.Find("SettingsButton");
+        CacheReferences();
+        UpdateButtonVisibility();
     }
 
-    public void RestartGame(){
-        spawn = GameObject.Find("Spawner").GetComponent<Spawning>();
-        shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
-        DeleteAllPegs();
-        Shooter.totalScore = 0;
-        shoot.ammoCount = shoot.startingAmmoCount;
-        spawn.resetUnlockedPegs();
-        audioClip = GameObject.Find("level_clear").GetComponent<AudioSource>();
-        audioClip.Play();
-        StartCoroutine(resetGame());
-    }
+    private void CacheReferences() {
+        if (settingsButton == null) {
+            settingsButton = GameObject.Find("SettingsButton");
+        }
 
-    IEnumerator resetGame()
-    {
-        yield return new WaitForSeconds(0.2f);
-        spawn.resetList();
-        spawn.SpawnObjects();
-        Shooter.gameOver = false;
-        Shooter.gameOverTextChecker = true;
-        settingsButton.SetActive(true);
-    }
+        if (shoot == null) {
+            GameObject shooterObject = GameObject.Find("Shooter");
 
-    private void DeleteAllPegs(){
-        var pegsToDelete = FindObjectsOfType<pegsToDelete>();
-        foreach(var pegToDelete in pegsToDelete){
-            Destroy(pegToDelete.gameObject);
+            if (shooterObject != null) {
+                shoot = shooterObject.GetComponent<Shooter>();
+            }
+        }
+
+        if (spawn == null) {
+            GameObject spawnerObject = GameObject.Find("Spawner");
+
+            if (spawnerObject != null) {
+                spawn = spawnerObject.GetComponent<Spawning>();
+            }
+        }
+
+        if (levelClearAudio == null) {
+            GameObject audioObject = GameObject.Find("level_clear");
+
+            if (audioObject != null) {
+                levelClearAudio = audioObject.GetComponent<AudioSource>();
+            }
         }
     }
 
-    public void cleanGame()
-    {
+    private void UpdateButtonVisibility() {
+        if (newRunButton == null) {
+            return;
+        }
+
+        bool hasActiveRun = RunManager.Instance != null && RunManager.Instance.HasActiveRunSave();
+        newRunButton.SetActive(hasActiveRun);
+    }
+
+    public void RestartGame() {
+        CacheReferences();
+
         DeleteAllPegs();
-        shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
-        spawn = GameObject.Find("Spawner").GetComponent<Spawning>();
+        DeleteAllProjectiles();
+
+        ResetStaticGameState();
+        ResetShooterState();
+        ResetSpawnerState();
+
+        PlaySound(levelClearAudio);
+        StartCoroutine(resetGame());
+    }
+
+    private IEnumerator resetGame() {
+        yield return new WaitForEndOfFrame();
+        yield return new WaitForSeconds(0.2f);
+
+        if (RunManager.Instance != null) {
+            RunManager.Instance.StartFreshRunFromButton();
+        }
+        else {
+            if (spawn != null) {
+                spawn.resetList();
+                spawn.SpawnObjects();
+            }
+
+            Shooter.gameOver = false;
+            Shooter.gameOverTextChecker = true;
+        }
+
+        if (settingsButton != null) {
+            settingsButton.SetActive(true);
+        }
+
+        UpdateButtonVisibility();
+    }
+
+    public void NewRun() {
+        StartCoroutine(NewRunRoutine());
+    }
+
+    private IEnumerator NewRunRoutine() {
+        CacheReferences();
+
+        DeleteAllPegs();
+        DeleteAllProjectiles();
+
+        ResetStaticGameState();
+        ResetShooterState();
+        ResetSpawnerState();
+
+        yield return new WaitForEndOfFrame();
+
+        if (RunManager.Instance != null) {
+            RunManager.Instance.StartFreshRunFromButton();
+        }
+        else if (spawn != null) {
+            spawn.resetList();
+            spawn.resetUnlockedPegs();
+            spawn.SpawnObjects();
+        }
+
+        if (settingsButton != null) {
+            settingsButton.SetActive(true);
+        }
+
+        PlaySound(levelClearAudio);
+        UpdateButtonVisibility();
+    }
+
+    public void cleanGame() {
+        CacheReferences();
+
+        DeleteAllPegs();
+        DeleteAllProjectiles();
+
+        ResetStaticGameState();
+        ResetShooterState();
+
+        if (spawn != null) {
+            spawn.resetList();
+        }
+
+        UpdateButtonVisibility();
+    }
+
+    public void OpenMenu() {
+        CacheReferences();
+
+        DeleteAllPegs();
+        DeleteAllProjectiles();
+
+        ResetStaticGameState();
+        ResetShooterState();
+
+        if (spawn != null) {
+            spawn.resetList();
+        }
+
+        if (settingsButton != null) {
+            settingsButton.SetActive(true);
+        }
+
+        SceneManager.LoadScene("Menu");
+    }
+
+    private void ResetStaticGameState() {
         Shooter.gameOver = false;
+        Shooter.gameOverTextChecker = true;
         Shooter.totalScore = 0;
         Shooter.shooting = false;
         Shooter.chanShootAgain = true;
-        shoot.ammoCount = shoot.startingAmmoCount;
-        spawn.resetList();
+        Shooter.totalPegsToSave = 0;
+        Shooter.totalLevelsToSave = 0;
     }
 
-    public void OpenMenu(){
-        spawn = GameObject.Find("Spawner").GetComponent<Spawning>();
-        shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
-        DeleteAllPegs();
-        settingsButton.SetActive(true);
-        Shooter.gameOver = false;
-        Shooter.totalScore = 0;
-        shoot.ammoCount = shoot.startingAmmoCount;
-        spawn.resetList();
-        SceneManager.LoadScene("Menu");
+    private void ResetShooterState() {
+        if (shoot == null) {
+            return;
+        }
+
+        int startingAmmo = shoot.startingAmmoCount > 0 ? shoot.startingAmmoCount : shoot.ammoCount;
+
+        shoot.ammoCount = startingAmmo;
+        shoot.prevScore = 0;
+        shoot.resetLocalScore();
+    }
+
+    private void ResetSpawnerState() {
+        if (spawn == null) {
+            return;
+        }
+
+        spawn.resetUnlockedPegs();
+    }
+
+    private void DeleteAllPegs() {
+        pegsToDelete[] pegs = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete peg in pegs) {
+            if (peg != null) {
+                Destroy(peg.gameObject);
+            }
+        }
+    }
+
+    private void DeleteAllProjectiles() {
+        ProjScript[] projectiles = FindObjectsOfType<ProjScript>();
+
+        foreach (ProjScript projectile in projectiles) {
+            if (projectile != null) {
+                Destroy(projectile.gameObject);
+            }
+        }
+
+        arrowProjScript[] arrowProjectiles = FindObjectsOfType<arrowProjScript>();
+
+        foreach (arrowProjScript arrowProjectile in arrowProjectiles) {
+            if (arrowProjectile != null) {
+                Destroy(arrowProjectile.gameObject);
+            }
+        }
+    }
+
+    private void PlaySound(AudioSource audioSource) {
+        if (audioSource != null) {
+            audioSource.Play();
+        }
     }
 }

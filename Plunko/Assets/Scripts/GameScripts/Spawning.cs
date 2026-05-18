@@ -4,7 +4,6 @@ using UnityEngine;
 
 public class Spawning : MonoBehaviour
 {
-    // Spawning Patterns
     public enum BoardPatterns 
     {
         HardSlide,
@@ -18,10 +17,9 @@ public class Spawning : MonoBehaviour
         WallBounce,
         Diamond,
     }
-    
-    // L/R + Slide settings
-    private enum SpawnSide { Left = -1, Right = 1}
-    private enum SlideMode { Both, LeftOnly, RightOnly, None}
+
+    private enum SpawnSide { Left = -1, Right = 1 }
+    private enum SlideMode { Both, LeftOnly, RightOnly, None }
 
     [Header("Seed Settings")]
     [SerializeField] private bool useSeededGeneration = true;
@@ -64,6 +62,16 @@ public class Spawning : MonoBehaviour
     [SerializeField] private float zeroX = -7.5f;
     [SerializeField] private float zeroY = 2f;
 
+    [System.Serializable]
+    public class BoardPrefabEntry
+    {
+        public string saveId;
+        public GameObject prefab;
+    }
+
+    [Header("Save/Load Prefab Mapping")]
+    [SerializeField] private List<BoardPrefabEntry> boardPrefabEntries = new List<BoardPrefabEntry>();
+
     public int spawnCount;
 
     private bool[,] grid;
@@ -72,6 +80,9 @@ public class Spawning : MonoBehaviour
     private int levelsCleared;
     private SpawnSide nextNormalSide = SpawnSide.Left;
     private System.Random seededRandom;
+    private bool initialized;
+
+    private BoardPatterns currentBoardPattern;
 
     private readonly List<GameObject> unlockedPegs = new List<GameObject>();
     private readonly List<GameObject> unlockPool = new List<GameObject>();
@@ -91,26 +102,49 @@ public class Spawning : MonoBehaviour
     };
 
     private void Start() {
+        InitializeSpawner();
+
+        // If RunManager exists, it controls whether we load a saved board or start a new run.
+        // This prevents a default board from spawning before the saved board is restored.
+        if (RunManager.Instance == null) {
+            StartNewSeededRun(seed, true);
+        }
+    }
+
+    private void InitializeSpawner() {
+        if (initialized) {
+            return;
+        }
+
         grid = new bool[xGridSize, yGridSize];
         slidePos = new int[xGridSize];
-        shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
 
-        ResetRunState();
-        SpawnObjects();
+        GameObject shooterObject = GameObject.Find("Shooter");
+        if (shooterObject != null) {
+            shoot = shooterObject.GetComponent<Shooter>();
+        }
+
+        initialized = true;
     }
 
-    // Main starting point
     public void SpawnObjects() {
+        InitializeSpawner();
+
         ResetBoardState();
         SpawnRandomPaddles();
-        SpawnBoardPattern(PickRandomPattern());
+        currentBoardPattern = PickRandomPattern();
+        SpawnBoardPattern(currentBoardPattern);
     }
 
-    // Use this later when starting a new run from a menu, seed input field, or daily challenge.
-    public void StartNewSeededRun(string newSeed) {
+    public void StartNewSeededRun(string newSeed, bool spawnBoard = true) {
+        InitializeSpawner();
+
         seed = NormalizeSeed(newSeed);
         ResetRunState();
-        SpawnObjects();
+
+        if (spawnBoard) {
+            SpawnObjects();
+        }
     }
 
     private void InitializeRandom() {
@@ -122,7 +156,7 @@ public class Spawning : MonoBehaviour
         }
     }
 
-     private string NormalizeSeed(string denormalized_seed) {
+    private string NormalizeSeed(string denormalized_seed) {
         if (string.IsNullOrWhiteSpace(denormalized_seed)) {
             return "PL00000000";
         }
@@ -136,7 +170,7 @@ public class Spawning : MonoBehaviour
         string hexPart = denormalized_seed.Substring(2);
 
         if (hexPart.Length > 8) {
-                        hexPart = hexPart.Substring(0, 8);
+            hexPart = hexPart.Substring(0, 8);
         }
 
         while (hexPart.Length < 8) {
@@ -155,12 +189,13 @@ public class Spawning : MonoBehaviour
         return "PL" + hexPart;
     }
 
-    private int SeedStringToInt(string denormalized_seed) {
-        string normalizedSeed = NormalizeSeed(denormalized_seed);
+    private int SeedStringToInt(string seed) {
+        string normalizedSeed = NormalizeSeed(seed);
         string hexPart = normalizedSeed.Substring(2, 8);
 
         try {
-            return System.Convert.ToInt32(hexPart, 16);
+            uint unsignedSeed = System.Convert.ToUInt32(hexPart, 16);
+            return unchecked((int)unsignedSeed);
         }
         catch {
             return 0;
@@ -254,6 +289,8 @@ public class Spawning : MonoBehaviour
     }
 
     private void ResetBoardState() {
+        InitializeSpawner();
+
         if (grid == null || grid.GetLength(0) != xGridSize || grid.GetLength(1) != yGridSize) {
             grid = new bool[xGridSize, yGridSize];
         }
@@ -299,7 +336,7 @@ public class Spawning : MonoBehaviour
         }
     }
 
-    private void BuildUnlockPool(){
+    private void BuildUnlockPool() {
         unlockPool.Clear();
         AddToUnlockPool(x2Peg);
         AddToUnlockPool(multiHitPeg);
@@ -321,8 +358,7 @@ public class Spawning : MonoBehaviour
         }
     }
 
-    private void SpawnRandomPaddles()
-    {
+    private void SpawnRandomPaddles() {
         int roll = Range(0, 100);
 
         if (roll < 15) {
@@ -444,65 +480,83 @@ public class Spawning : MonoBehaviour
     }
 
     public void SpawnTriangle() {
-    int startingX = Range(2, 4);
-    int startingY = 4;
+        int startingX = Range(2, 4);
+        int startingY = 4;
 
-    int level = 1;
-    int prevY = 1;
-    int currentY = 1;
+        int level = 1;
+        int prevY = 1;
+        int currentY = 1;
 
-    SpawnSliderPair(startingX - 1, startingY + 1);
+        SpawnSliderPair(startingX - 1, startingY + 1);
 
-    while (startingX < xGridSize) {
-        for (int i = 0; i < level; i++) {
-            TrySpawnCell(startingX, startingY - i);
+        while (startingX < xGridSize) {
+            for (int i = 0; i < level; i++) {
+                TrySpawnCell(startingX, startingY - i);
+            }
+
+            currentY = startingY + level;
+
+            if (currentY != prevY) {
+                SpawnTriangleSlider(startingX - 1, startingY - level);
+            }
+
+            SpawnSliderPair(startingX, startingY + 1);
+
+            if (level <= startingY) {
+                level++;
+            }
+
+            startingX++;
+            prevY = currentY;
         }
-
-        currentY = startingY + level;
-
-        if (currentY != prevY) {
-            SpawnTriangleSlider(startingX - 1, startingY - level);
-        }
-
-        SpawnSliderPair(startingX, startingY + 1);
-
-        if (level <= startingY) {
-            level++;
-        }
-
-        startingX++;
-        prevY = currentY;
     }
-}
 
     public void SpawnBucket() {
-        int startX = 1;
-        int bottomY = yGridSize - 2;
+        int startingX = 1;
+        int startingY = 0;
+        int initialY = yGridSize - 2;
 
-        for (int y = 0; y < bottomY; y++) {
-            SpawnBucketWall(startX - 1, y - 0.5f);
+        int firstTwo = 0;
+        int level = 0;
 
-            if (y < bottomY - 2) {
-                SpawnBucketWall(startX + 2, y - 0.5f);
+        for (int i = startingY; i < initialY; i++) {
+            SpawnBucketWall(startingX - 1, startingY + i - 0.5f);
+
+            if (startingY + i < initialY - 2) {
+                SpawnBucketWall(startingX + 2, startingY + i - 0.5f);
             }
         }
 
-        for (int x = startX; x < xGridSize; x++) {
-            if (x < startX + 2) {
-                for (int y = 0; y < bottomY; y++) {
-                    TrySpawnCell(x, y);
-                }
+        while (startingX < xGridSize) {
+            int amountSpawned = 0;
+
+            if (firstTwo < 2) {
+                level = yGridSize - 2;
             }
             else {
-                TrySpawnCell(x, yGridSize - 3);
-                TrySpawnCell(x, yGridSize - 4);
+                startingY = yGridSize - 3;
+                level = 2;
             }
 
-            SpawnSliderPair(x, bottomY);
+            while (amountSpawned < level) {
+                if (firstTwo < 2) {
+                    TrySpawnCell(startingX, startingY + amountSpawned);
+                }
+                else {
+                    TrySpawnCell(startingX, startingY - amountSpawned);
+                }
 
-            if (x > startX + 2) {
-                SpawnInsideBucketRail(x, bottomY - 3.25f);
+                amountSpawned++;
             }
+
+            SpawnSliderPair(startingX, initialY);
+
+            if (firstTwo > 2) {
+                SpawnInsideBucketRail(startingX, initialY - 3.25f);
+            }
+
+            firstTwo++;
+            startingX++;
         }
     }
 
@@ -535,8 +589,6 @@ public class Spawning : MonoBehaviour
             }
         }
     }
-
-    // SpawnDenseField Helper
 
     private void SpawnDenseCenterPeg(GameObject prefab, float worldX, float y) {
         if (prefab == null) {
@@ -711,7 +763,7 @@ public class Spawning : MonoBehaviour
 
         Instantiate(prefab, WorldPos(x, y, side), rotation);
     }
-    
+
     private Vector3 WorldPos(int x, float y, SpawnSide side) {
         float worldX = side == SpawnSide.Left ? zeroX + x : -zeroX - x;
         float worldY = zeroY - y;
@@ -795,5 +847,272 @@ public class Spawning : MonoBehaviour
 
     public void addLevelsCleared() {
         levelsCleared++;
+    }
+
+    public int GetLevelsCleared() {
+        return levelsCleared;
+    }
+
+    public void SetLevelsCleared(int value) {
+        levelsCleared = value;
+    }
+
+    public int GetCurrentLevelNumber() {
+        return levelsCleared + 1;
+    }
+
+    public string GetCurrentBoardPatternName() {
+        return currentBoardPattern.ToString();
+    }
+
+    public List<string> GetUnlockedPegNames() {
+        List<string> names = new List<string>();
+
+        for (int i = 0; i < unlockedPegs.Count; i++) {
+            if (unlockedPegs[i] != null) {
+                names.Add(unlockedPegs[i].name);
+            }
+        }
+
+        return names;
+    }
+
+    public void RegenerateToLevel(int levelNumber) {
+        for (int i = 1; i < levelNumber; i++) {
+            SpawnObjects();
+        }
+    }
+
+    public List<BoardObjectSaveData> GetCurrentBoardState() {
+        List<BoardObjectSaveData> boardObjects = new List<BoardObjectSaveData>();
+
+        pegsToDelete[] objectsToSave = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete obj in objectsToSave) {
+            if (obj == null || !obj.gameObject.activeInHierarchy) {
+                continue;
+            }
+
+            BoardObjectSaveData data = new BoardObjectSaveData();
+
+            data.saveId = GetSaveIdFromObjectName(obj.gameObject.name);
+            data.objectTag = obj.gameObject.tag;
+            data.position = obj.transform.position;
+            data.rotation = obj.transform.eulerAngles;
+
+            boardObjects.Add(data);
+        }
+
+        return boardObjects;
+    }
+
+    public bool RestoreBoardState(List<BoardObjectSaveData> boardObjects) {
+        InitializeSpawner();
+
+        if (boardObjects == null || boardObjects.Count == 0) {
+            Debug.LogWarning("No saved board objects found.");
+            return false;
+        }
+
+        int restoreableCount = CountRestoreableObjects(boardObjects);
+
+        Debug.Log(
+            "Restoring board state. Saved Objects: " + boardObjects.Count +
+            " | Restoreable Objects: " + restoreableCount
+        );
+
+        if (restoreableCount <= 0) {
+            Debug.LogWarning("No saved board objects could be mapped to prefabs.");
+            return false;
+        }
+
+        ClearCurrentBoardObjects();
+
+        spawnCount = 0;
+
+        for (int i = 0; i < boardObjects.Count; i++) {
+            BoardObjectSaveData data = boardObjects[i];
+            GameObject prefab = GetPrefabForSaveData(data);
+
+            if (prefab == null) {
+                Debug.LogWarning(
+                    "No prefab mapped for saved board object. " +
+                    "SaveId: " + data.saveId +
+                    " | Tag: " + data.objectTag
+                );
+                continue;
+            }
+
+            GameObject restoredObject = Instantiate(
+                prefab,
+                data.position,
+                Quaternion.Euler(data.rotation)
+            );
+
+            spawnCount += GetSpawnCountValueForTag(restoredObject.tag);
+        }
+
+        Debug.Log("Board restore complete. spawnCount: " + spawnCount);
+        return true;
+    }
+
+    private int CountRestoreableObjects(List<BoardObjectSaveData> boardObjects) {
+        int count = 0;
+
+        for (int i = 0; i < boardObjects.Count; i++) {
+            if (GetPrefabForSaveData(boardObjects[i]) != null) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private void ClearCurrentBoardObjects() {
+        pegsToDelete[] objectsToDelete = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete obj in objectsToDelete) {
+            if (obj != null) {
+                obj.gameObject.SetActive(false);
+                Destroy(obj.gameObject);
+            }
+        }
+    }
+
+    public void ClearCurrentBoard() {
+        ClearCurrentBoardObjects();
+        spawnCount = 0;
+    }
+
+    private GameObject GetPrefabForSaveData(BoardObjectSaveData data) {
+        if (data == null) {
+            return null;
+        }
+
+        GameObject prefabBySaveId = GetPrefabForSaveId(data.saveId);
+
+        if (prefabBySaveId != null) {
+            return prefabBySaveId;
+        }
+
+        GameObject prefabByKnownName = GetKnownPrefabBySaveId(data.saveId);
+
+        if (prefabByKnownName != null) {
+            return prefabByKnownName;
+        }
+
+        return GetKnownPrefabByTag(data.objectTag);
+    }
+
+    private GameObject GetPrefabForSaveId(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return null;
+        }
+
+        for (int i = 0; i < boardPrefabEntries.Count; i++) {
+            if (boardPrefabEntries[i] == null) {
+                continue;
+            }
+
+            if (boardPrefabEntries[i].saveId == saveId) {
+                return boardPrefabEntries[i].prefab;
+            }
+        }
+
+        return null;
+    }
+
+    private GameObject GetKnownPrefabBySaveId(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return null;
+        }
+
+        GameObject[] knownPrefabs = {
+            normalPeg,
+            multiHitPeg,
+            pyramidPeg,
+            blackholePeg,
+            ammoPlusPeg,
+            ammoMinusPeg,
+            x2Peg,
+            arrowPegLeft,
+            arrowPegUpLeft,
+            arrowPegRight,
+            arrowPegUpRight,
+            twoHitPeg,
+            sliderPeg,
+            sliderPegShort,
+            slideCornerLeft,
+            slideCornerRight
+        };
+
+        for (int i = 0; i < knownPrefabs.Length; i++) {
+            if (knownPrefabs[i] == null) {
+                continue;
+            }
+
+            if (string.Equals(knownPrefabs[i].name, saveId, System.StringComparison.OrdinalIgnoreCase)) {
+                return knownPrefabs[i];
+            }
+        }
+
+        return null;
+    }
+
+    private GameObject GetKnownPrefabByTag(string objectTag) {
+        switch (objectTag) {
+            case "Peg":
+                return normalPeg;
+            case "AmmoPlus":
+                return ammoPlusPeg;
+            case "AmmoMinus":
+                return ammoMinusPeg;
+            case "MultiHitPeg":
+                return multiHitPeg;
+            case "TwoHitPeg":
+                return twoHitPeg;
+            case "BlackHole":
+                return blackholePeg;
+            case "x2":
+                return x2Peg;
+            case "ArrowLeft":
+                return arrowPegLeft;
+            case "ArrowRight":
+                return arrowPegRight;
+            case "ArrowUpLeft":
+                return arrowPegUpLeft;
+            case "ArrowUpRight":
+                return arrowPegUpRight;
+            default:
+                return null;
+        }
+    }
+
+    private string GetSaveIdFromObjectName(string objectName) {
+        if (string.IsNullOrWhiteSpace(objectName)) {
+            return "";
+        }
+
+        return objectName.Replace("(Clone)", "").Trim();
+    }
+
+    private int GetSpawnCountValueForTag(string objectTag) {
+        if (objectTag == "MultiHitPeg" || objectTag == "TwoHitPeg") {
+            return 2;
+        }
+
+        if (objectTag == "Peg") {
+            return 1;
+        }
+
+        if (objectTag == "AmmoPlus" || objectTag == "AmmoMinus" || objectTag == "BlackHole" || objectTag == "x2") {
+            return 1;
+        }
+
+        if (objectTag == "ArrowLeft" || objectTag == "ArrowRight" || objectTag == "ArrowUpLeft" || objectTag == "ArrowUpRight") {
+            return 1;
+        }
+
+        return 0;
     }
 }

@@ -6,404 +6,633 @@ using UnityEngine.SceneManagement;
 
 public class Tutorial_Shooter : MonoBehaviour
 {
-    [Header("Firing variables")]
+    private enum MobileShotState
+    {
+        Idle,
+        Charging,
+        Released
+    }
+
+    [Header("Firing Variables")]
     [SerializeField] private GameObject projectile;
-    [SerializeField] private float projSpeed, maxChargeSpeed, chargeSpeed;
+    [SerializeField] private float projSpeed;
+    [SerializeField] private float maxChargeSpeed;
+    [SerializeField] private float chargeSpeed;
     [SerializeField] private Transform firePoint;
     [SerializeField] public int ammoCount;
     [SerializeField] private GameObject aimingArrow;
-    private float startingProjSpeed;
-    [HideInInspector] public int startingAmmoCount;
-    private float arrowXPos = 0, arrowLength = .75f;
-    [HideInInspector] public int prevScore = 0;
-    private Vector3 difference;
-    private int chargeButtonShoot = 0;
-    private bool cancelOrNot = true;
-    private GameObject[] points;    //the points to place for the proj path
-    [SerializeField] private int numberOfPoints;    //max number of points to place
-    [SerializeField] private GameObject pointPrefab;
-    private float rotation_z;
-    public int tutorialPegsActive;
-    private AudioSource audioClip;
-    //[Space(20)]
 
-    [Header("UI variables")]
-    [SerializeField] private Text ammoText, maxChargeText;
-    [SerializeField] private Text scoreText, gameOverScoreText, gameOverHighScoreText;
+    [Header("Trajectory Preview")]
+    [SerializeField] private GameObject pointPrefab;
+    [SerializeField] private int numberOfPoints = 35;
+    [SerializeField] private bool usePredictiveCollisionTrace = true;
+    [SerializeField] private bool showAimingArrow = false;
+    [SerializeField] private LayerMask traceCollisionMask = ~0;
+    [SerializeField] private float traceTimeStep = 0.04f;
+    [SerializeField] private float traceRadius = 0.10f;
+    [SerializeField] private int maxTraceBounces = 2;
+    [SerializeField] private float traceBounceDamping = 0.85f;
+    [SerializeField] private float traceSkinWidth = 0.12f;
+
+    [Header("UI Variables")]
+    [SerializeField] private Text ammoText;
+    [SerializeField] private Text maxChargeText;
+    [SerializeField] private Text scoreText;
+    [SerializeField] private Text gameOverScoreText;
+    [SerializeField] private Text gameOverHighScoreText;
     [SerializeField] private Image chargeBar;
-    [SerializeField] private GameObject gameOverPanel, chargeImage;
+    [SerializeField] private GameObject gameOverPanel;
+    [SerializeField] private GameObject chargeImage;
+    [SerializeField] private GameObject shootButton;
+    [SerializeField] private Sprite[] shootButtonSprites;
+    [SerializeField] private GameObject cancelButton;
+    [SerializeField] private GameObject settings_button;
+
+    [Header("Tutorial UI")]
+    [SerializeField] private GameObject tutorial;
+    [SerializeField] private GameObject continueButton;
+    [SerializeField] private GameObject tutorial2;
+    [SerializeField] private GameObject PlayButton;
+
+    [Header("Tutorial State")]
+    [SerializeField] public int tutorialPegsActive;
+
+    [Header("Background")]
+    [SerializeField] private GameObject[] planets;
+
+    [HideInInspector] public int startingAmmoCount;
+    [HideInInspector] public int prevScore = 0;
+
     public Text scorePopUpText;
     public Text unlockedPopUpText;
     public Image imageOfPeg;
     [HideInInspector] public bool fadeText = false;
-    [SerializeField] private GameObject[] planets;
-    [SerializeField] private GameObject shootButton;
-    [SerializeField] private Sprite[] shootButtonSprites;
-    [SerializeField] private GameObject cancelButton;
-
-    private int countVal;
-    [SerializeField] private int countFPS;
-    [SerializeField] private float duration;
-    //[Space(20)]
 
     public static int totalScore;
     public static bool shooting;
     public static bool gameOver;
-    private bool chargeUpDown = true;
     public static bool chanShootAgain = true;
-    private bool pcOrMobile = true;
-
-    // sounds
-    bool charge_playing;
-    private AudioSource charge;
-    private AudioSource shoot;
-    
-    private SettingsManager set;
-    private bool settingsOpen;
-    private GameObject settingsButton;
 
     public GameData gameData;
 
-    public GameObject settings_button;
+    private const float BaseArrowLength = 0.75f;
 
-    private bool tutorialOpen;
-    public GameObject tutorial;
-    public GameObject continueButton;
-    public GameObject tutorial2;
-    public GameObject PlayButton;
+    private Camera mainCamera;
+    private GameObject[] trajectoryPoints;
+    private MobileShotState mobileShotState = MobileShotState.Idle;
 
-    private void Awake()
-    {
+    private float startingProjSpeed;
+    private float arrowLength = BaseArrowLength;
+    private bool chargeUpDown = true;
+    private bool cancelOrNot = true;
+    private bool isDesktop = true;
+    private bool chargePlaying;
+    private bool settingsOpen;
+    private bool tutorialOpen = true;
+
+    private AudioSource chargeAudio;
+    private AudioSource shootAudio;
+    private AudioSource blipSelectAudio;
+    private SettingsManager settingsManager;
+
+    private void Awake() {
+        mainCamera = Camera.main;
         gameData = SaveSystem.Load();
-        if (SystemInfo.deviceType == DeviceType.Handheld)
-        {
-            pcOrMobile = false;
-        }
-        else
-        {
+        isDesktop = SystemInfo.deviceType != DeviceType.Handheld;
+
+        if (isDesktop && shootButton != null) {
             shootButton.SetActive(false);
         }
     }
 
-    void Start()
-    {
-        //used to initlize points
-        points = new GameObject[numberOfPoints];
-        for (int i = 0; i < numberOfPoints; i++)
-        {
-            points[i] = Instantiate(pointPrefab, transform.position, Quaternion.identity);
+    private void Start() {
+        CacheSceneReferences();
+        InitializeTrajectoryPoints();
+        InitializeTutorialState();
+    }
+
+    private void Update() {
+        UpdateUI();
+
+        if (CanControlShooter()) {
+            UpdateAiming();
+            HandleChargingAndShooting();
+        }
+        else {
+            HideTrajectoryPoints();
+        }
+    }
+
+    private void CacheSceneReferences() {
+        chargeAudio = FindAudioSource("charge");
+        shootAudio = FindAudioSource("shoot");
+        blipSelectAudio = FindAudioSource("blipSelect");
+
+        GameObject managerObject = GameObject.Find("Script_Manager");
+        if (managerObject != null) {
+            settingsManager = managerObject.GetComponent<SettingsManager>();
         }
 
+        GameObject settingsButton = GameObject.Find("SettingsButton");
+        if (settingsButton != null) {
+            settingsButton.SetActive(true);
+        }
+    }
+
+    private AudioSource FindAudioSource(string objectName) {
+        GameObject audioObject = GameObject.Find(objectName);
+        return audioObject != null ? audioObject.GetComponent<AudioSource>() : null;
+    }
+
+    private void InitializeTrajectoryPoints() {
+        trajectoryPoints = new GameObject[numberOfPoints];
+
+        for (int i = 0; i < trajectoryPoints.Length; i++) {
+            trajectoryPoints[i] = Instantiate(pointPrefab, transform.position, Quaternion.identity);
+            trajectoryPoints[i].SetActive(false);
+        }
+    }
+
+    private void InitializeTutorialState() {
+        startingAmmoCount = ammoCount;
         startingProjSpeed = projSpeed;
+        arrowLength = BaseArrowLength;
         chargeUpDown = true;
         chanShootAgain = true;
         shooting = false;
-        chargeBar.enabled = true;
-        // sounds
-        charge = GameObject.Find("charge").GetComponent<AudioSource>();
-        charge_playing = false;
-        shoot = GameObject.Find("shoot").GetComponent<AudioSource>();
-        set = GameObject.Find("Script_Manager").GetComponent<SettingsManager>();
+        gameOver = false;
         settingsOpen = false;
-        settingsButton = GameObject.Find("SettingsButton");
-        settingsButton.SetActive(true);
         tutorialOpen = true;
-    }
+        chargePlaying = false;
+        mobileShotState = MobileShotState.Idle;
 
-    //points function
-    Vector2 pointPos(float t)
-    {
-        Vector2 currPos = (Vector2)firePoint.transform.position + ((Vector2)difference * projSpeed * t) + 0.5f * Physics2D.gravity * (t * t);
-        return currPos;
-    }
-    void updatePoints()
-    {
-        for (int i = 0; i < points.Length; i++)
-        {
-            points[i].SetActive(true);
-            points[i].transform.position = pointPos(i * 0.1f);  //can play around with the number
-        }
-    }
-
-    private void UpdateUI()
-    {
-        if (chargeBar.fillAmount <= .01)
-        {
-            maxChargeText.enabled = false;
-            chargeImage.SetActive(false);
-        }
-        else
-        {
-            maxChargeText.enabled = true;
-            chargeImage.SetActive(true);
-        }
-    }
-    private void Aiming()
-    {
-        //if(pcOrMobile){
-        //difference = Camera.main.ScreenToWorldPoint(Input.mousePosition) - transform.position;
-        //}
-        //else{
-        //difference = Camera.main.ScreenToWorldPoint(Input.mousePosition) - transform.position;
-        //}
-        //difference.Normalize();
-
-        //line below is for CLAMPING
-        if (chargeButtonShoot == 0)
-        {
-            difference = Camera.main.ScreenToWorldPoint(Input.mousePosition) - transform.position;
-            difference.Normalize();
-            rotation_z = (Mathf.Atan2(difference.y, difference.x) * Mathf.Rad2Deg); //Mathf.Clamp((Mathf.Atan2(difference.y, difference.x) * Mathf.Rad2Deg), -180, 0);
-
-            transform.rotation = Quaternion.Euler(0f, 0f, rotation_z);  //can add an offset to the rotz if needed   
-        }
-    }
-    //for the button
-    public void chargeShot()
-    {
-        //cancelButton.SetActive(true);
-        chargeButtonShoot = 1;
-        cancelOrNot = true;
-        //shooting = false;
-        if (shooting == false)
-        {
-            shootButton.GetComponent<Image>().sprite = shootButtonSprites[1];
-        }
-    }
-    public void releaseShot()
-    {
-        //cancelButton.SetActive(false);
-        if (chargeButtonShoot == 1)
-        {
-            chargeButtonShoot = 2;
-        }
-        shootButton.GetComponent<Image>().sprite = shootButtonSprites[0];
-        for (int i = 0; i < points.Length; i++)
-        {
-            points[i].SetActive(false);
-        }
-    }
-    public void cancelShot()
-    {
-        if (chargeButtonShoot == 1)
-        {
-            chargeButtonShoot = 0;
-            cancelOrNot = false;
-            //if(chanShootAgain){
-            StartCoroutine(resetShot());
-            //}
-            //cancelButton.SetActive(true);
-
-            shootButton.GetComponent<Image>().sprite = shootButtonSprites[0];
-            chanShootAgain = true;
-            shooting = false;
-
-            arrowLength = .75f;
-            arrowXPos = 0;
-
-            //shooting = true;
+        if (aimingArrow != null) {
             aimingArrow.SetActive(false);
-            charge.Stop();
-            charge_playing = false;
-            projSpeed = startingProjSpeed;
-            chargeBar.enabled = false;
-            for (int i = 0; i < points.Length; i++)
-            {
-                points[i].SetActive(false);
-            }
         }
-    }
 
-    //for pc controls
-    private void ChargingNShooting()
-    {
-        //Input.GetMouseButton(0) || 
-        if (((Input.GetMouseButton(0) && pcOrMobile) || (chargeButtonShoot == 1 && pcOrMobile == false)) && cancelOrNot && shooting == false && chanShootAgain)
-        {
+        if (chargeBar != null) {
             chargeBar.enabled = true;
-            //aimingArrow.SetActive(true);
-
-            //used to update the aiming points
-            updatePoints();
-
-            if (chargeUpDown)
-            {
-                projSpeed += chargeSpeed * Time.deltaTime;
-                arrowXPos += .15f * Time.deltaTime;
-                arrowLength += .15f * Time.deltaTime;
-                projSpeed = Mathf.Clamp(projSpeed, startingProjSpeed, maxChargeSpeed);
-                if (projSpeed >= maxChargeSpeed)
-                {
-                    chargeUpDown = false;
-                }
-            }
-            else
-            {
-                projSpeed -= chargeSpeed * Time.deltaTime;
-                arrowXPos -= .15f * Time.deltaTime;
-                arrowLength -= .15f * Time.deltaTime;
-                projSpeed = Mathf.Clamp(projSpeed, startingProjSpeed, maxChargeSpeed);
-                if (projSpeed <= startingProjSpeed)
-                {
-                    chargeUpDown = true;
-                }
-            }
-            if (!charge_playing)
-            {
-                charge.Play();
-                charge_playing = true;
-            }
-            //aimingArrow.transform.position = new Vector2(transform.position.x+arrowXPos,aimingArrow.transform.position.y);
-            //aimingArrow.transform.position += transform.forward * 2 * Time.deltaTime;
-            aimingArrow.transform.localScale = new Vector2(arrowLength, aimingArrow.transform.localScale.y);
-            ChargeBarFiller();
-            ColorChanger();
         }
-        // 
-        if (((Input.GetMouseButtonUp(0) && pcOrMobile) || (chargeButtonShoot == 2 && pcOrMobile == false)) && cancelOrNot && shooting == false && chanShootAgain)
-        {
-            arrowLength = .75f;
-            arrowXPos = 0;
-            shooting = true;
+    }
+
+    private bool CanControlShooter() {
+        bool tutorialSettingsOpen = settingsManager != null && settingsManager.getTutorialOpen();
+        return !settingsOpen && !tutorialOpen && !tutorialSettingsOpen && tutorialPegsActive > 0;
+    }
+
+    private bool CanShoot() {
+        return cancelOrNot && !shooting && chanShootAgain;
+    }
+
+    private bool IsChargeHeld() {
+        return (isDesktop && Input.GetMouseButton(0)) || (!isDesktop && mobileShotState == MobileShotState.Charging);
+    }
+
+    private bool IsShotReleased() {
+        return (isDesktop && Input.GetMouseButtonUp(0)) || (!isDesktop && mobileShotState == MobileShotState.Released);
+    }
+
+    private void UpdateAiming() {
+        if (mainCamera == null) {
+            mainCamera = Camera.main;
+        }
+
+        if (mainCamera == null) {
+            return;
+        }
+
+        if (!isDesktop && mobileShotState != MobileShotState.Idle) {
+            return;
+        }
+
+        Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        Vector2 aimDirection = mouseWorldPosition - transform.position;
+
+        if (aimDirection.sqrMagnitude <= 0.0001f) {
+            return;
+        }
+
+        aimDirection.Normalize();
+
+        float rotationZ = Mathf.Atan2(aimDirection.y, aimDirection.x) * Mathf.Rad2Deg;
+        transform.rotation = Quaternion.Euler(0f, 0f, rotationZ);
+    }
+
+    private void HandleChargingAndShooting() {
+        if (IsChargeHeld() && CanShoot()) {
+            ContinueChargingShot();
+        }
+
+        if (IsShotReleased() && CanShoot()) {
+            ReleaseChargedShot();
+        }
+    }
+
+    private void ContinueChargingShot() {
+        SetChargeVisualsActive(true);
+        UpdateChargeSpeed();
+        UpdateAimingArrow();
+        UpdateTrajectoryPreview();
+        PlayChargeAudio();
+        UpdateChargeBar();
+    }
+
+    private void UpdateChargeSpeed() {
+        float direction = chargeUpDown ? 1f : -1f;
+
+        projSpeed += chargeSpeed * direction * Time.deltaTime;
+        projSpeed = Mathf.Clamp(projSpeed, startingProjSpeed, maxChargeSpeed);
+
+        arrowLength += 0.15f * direction * Time.deltaTime;
+        arrowLength = Mathf.Max(BaseArrowLength, arrowLength);
+
+        if (projSpeed >= maxChargeSpeed) {
+            chargeUpDown = false;
+        }
+        else if (projSpeed <= startingProjSpeed) {
+            chargeUpDown = true;
+        }
+    }
+
+    private void UpdateAimingArrow() {
+        if (aimingArrow == null) {
+            return;
+        }
+
+        if (!showAimingArrow) {
             aimingArrow.SetActive(false);
-            charge.Stop();
-            charge_playing = false;
-            //print(projSpeed);
-            Fire();
-            shoot.Play();
-            projSpeed = startingProjSpeed;
-            chargeBar.fillAmount = 0;
+            return;
+        }
+
+        aimingArrow.SetActive(true);
+        aimingArrow.transform.localScale = new Vector2(arrowLength, aimingArrow.transform.localScale.y);
+    }
+
+    private void PlayChargeAudio() {
+        if (chargeAudio == null || chargePlaying) {
+            return;
+        }
+
+        chargeAudio.Play();
+        chargePlaying = true;
+    }
+
+    private void ReleaseChargedShot() {
+        shooting = true;
+
+        Fire();
+
+        if (shootAudio != null) {
+            shootAudio.Play();
+        }
+
+        ResetChargeState(false);
+    }
+
+    private void ResetChargeState(bool allowShootAgainAfterDelay) {
+        arrowLength = BaseArrowLength;
+        projSpeed = startingProjSpeed;
+        chargeUpDown = true;
+        mobileShotState = MobileShotState.Idle;
+
+        if (aimingArrow != null) {
+            aimingArrow.SetActive(false);
+        }
+
+        if (chargeAudio != null) {
+            chargeAudio.Stop();
+        }
+
+        chargePlaying = false;
+
+        if (chargeBar != null) {
+            chargeBar.fillAmount = 0f;
             chargeBar.enabled = false;
-            for (int i = 0; i < points.Length; i++)
-            {
-                points[i].SetActive(false);
+        }
+
+        SetShootButtonSprite(0);
+        HideTrajectoryPoints();
+
+        if (allowShootAgainAfterDelay) {
+            StartCoroutine(resetShot());
+        }
+    }
+
+    private void SetChargeVisualsActive(bool active) {
+        if (chargeBar != null) {
+            chargeBar.enabled = active;
+        }
+    }
+
+    private void UpdateChargeBar() {
+        if (chargeBar == null) {
+            return;
+        }
+
+        chargeBar.fillAmount = projSpeed / maxChargeSpeed;
+        chargeBar.color = Color.Lerp(Color.red, Color.green, chargeBar.fillAmount);
+    }
+
+    private void UpdateTrajectoryPreview() {
+        if (trajectoryPoints == null || trajectoryPoints.Length == 0) {
+            return;
+        }
+
+        if (usePredictiveCollisionTrace) {
+            UpdateCollisionTrajectoryPreview();
+        }
+        else {
+            UpdateSimpleGravityTrajectoryPreview();
+        }
+    }
+
+    private void UpdateSimpleGravityTrajectoryPreview() {
+        for (int i = 0; i < trajectoryPoints.Length; i++) {
+            float t = i * traceTimeStep;
+            Vector2 point = (Vector2)firePoint.position + ((Vector2)firePoint.right * projSpeed * t) + 0.5f * Physics2D.gravity * (t * t);
+            SetTrajectoryPoint(i, point);
+        }
+    }
+
+    private void UpdateCollisionTrajectoryPreview() {
+        Vector2 position = firePoint.position;
+        Vector2 velocity = (Vector2)firePoint.right * projSpeed;
+
+        int visiblePointIndex = 0;
+        int bounceCount = 0;
+        Collider2D lastHitCollider = null;
+
+        HideTrajectoryPoints();
+
+        for (int step = 0; step < numberOfPoints && visiblePointIndex < trajectoryPoints.Length; step++) {
+            Vector2 nextVelocity = velocity + Physics2D.gravity * traceTimeStep;
+            Vector2 nextPosition = position + velocity * traceTimeStep + 0.5f * Physics2D.gravity * traceTimeStep * traceTimeStep;
+            Vector2 travel = nextPosition - position;
+
+            if (travel.sqrMagnitude <= 0.0001f) {
+                break;
+            }
+
+            RaycastHit2D hit = CastTrajectorySegment(position, travel);
+
+            if (hit.collider != null && !ShouldIgnoreTraceHit(hit, lastHitCollider)) {
+                Vector2 hitPosition = hit.point;
+
+                SetTrajectoryPoint(visiblePointIndex, hitPosition);
+                visiblePointIndex++;
+
+                velocity = Vector2.Reflect(nextVelocity, hit.normal) * traceBounceDamping;
+                position = hitPosition + hit.normal * traceSkinWidth;
+                lastHitCollider = hit.collider;
+
+                bounceCount++;
+                if (bounceCount >= maxTraceBounces) {
+                    break;
+                }
+            }
+            else {
+                position = nextPosition;
+                velocity = nextVelocity;
+                lastHitCollider = null;
+
+                SetTrajectoryPoint(visiblePointIndex, position);
+                visiblePointIndex++;
             }
         }
     }
 
-    void Update()
-    {
+    private RaycastHit2D CastTrajectorySegment(Vector2 start, Vector2 travel) {
+        Vector2 direction = travel.normalized;
+        float distance = travel.magnitude;
 
-        UpdateUI();
-        if (!settingsOpen && !tutorialOpen && tutorialPegsActive > 0)
-        {
-            Aiming();
-
-            ChargingNShooting();
-
-
+        if (traceRadius > 0f) {
+            return Physics2D.CircleCast(start, traceRadius, direction, distance, traceCollisionMask);
         }
-        if (settingsOpen)
-        {
-            for (int i = 0; i < points.Length; i++)
-            {
-                points[i].SetActive(false);
+
+        return Physics2D.Raycast(start, direction, distance, traceCollisionMask);
+    }
+
+    private bool ShouldIgnoreTraceHit(RaycastHit2D hit, Collider2D lastHitCollider) {
+        if (hit.collider == null) {
+            return true;
+        }
+
+        if (hit.collider == lastHitCollider) {
+            return true;
+        }
+
+        Transform hitTransform = hit.collider.transform;
+
+        if (hitTransform == transform || hitTransform.IsChildOf(transform)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void SetTrajectoryPoint(int index, Vector2 position) {
+        if (index < 0 || index >= trajectoryPoints.Length || trajectoryPoints[index] == null) {
+            return;
+        }
+
+        trajectoryPoints[index].SetActive(true);
+        trajectoryPoints[index].transform.position = position;
+    }
+
+    private void HideTrajectoryPoints() {
+        if (trajectoryPoints == null) {
+            return;
+        }
+
+        for (int i = 0; i < trajectoryPoints.Length; i++) {
+            if (trajectoryPoints[i] != null) {
+                trajectoryPoints[i].SetActive(false);
             }
         }
     }
 
-    public bool getSettingsOpen()
-    {
+    private void UpdateUI() {
+        bool hasCharge = chargeBar != null && chargeBar.fillAmount > 0.01f;
+
+        if (maxChargeText != null) {
+            maxChargeText.enabled = hasCharge;
+        }
+
+        if (chargeImage != null) {
+            chargeImage.SetActive(hasCharge);
+        }
+
+        if (ammoText != null) {
+            ammoText.text = "Ammo: " + ammoCount;
+        }
+
+        if (scoreText != null) {
+            scoreText.text = "";
+        }
+
+        if (gameOverPanel != null) {
+            gameOverPanel.SetActive(false);
+        }
+    }
+
+    public void chargeShot() {
+        mobileShotState = MobileShotState.Charging;
+        cancelOrNot = true;
+
+        if (!shooting) {
+            SetShootButtonSprite(1);
+        }
+    }
+
+    public void releaseShot() {
+        if (mobileShotState == MobileShotState.Charging) {
+            mobileShotState = MobileShotState.Released;
+        }
+
+        SetShootButtonSprite(0);
+        HideTrajectoryPoints();
+    }
+
+    public void cancelShot() {
+        if (mobileShotState != MobileShotState.Charging) {
+            return;
+        }
+
+        mobileShotState = MobileShotState.Idle;
+        cancelOrNot = false;
+        chanShootAgain = true;
+        shooting = false;
+
+        ResetChargeState(true);
+    }
+
+    private void SetShootButtonSprite(int spriteIndex) {
+        if (shootButton == null || shootButtonSprites == null || shootButtonSprites.Length <= spriteIndex) {
+            return;
+        }
+
+        Image buttonImage = shootButton.GetComponent<Image>();
+        if (buttonImage != null) {
+            buttonImage.sprite = shootButtonSprites[spriteIndex];
+        }
+    }
+
+    public bool getSettingsOpen() {
         return settingsOpen;
     }
 
-    public void setSettingsToClose()
-    {
-        if (settingsOpen)
-        {
-
+    public void setSettingsToClose() {
+        if (settingsOpen) {
             StartCoroutine(readyToPlay());
+            return;
         }
-        else
-        {
+
+        if (settings_button != null) {
             settings_button.SetActive(false);
+        }
+
+        if (aimingArrow != null) {
             aimingArrow.SetActive(false);
-            settingsOpen = true;
-            charge.Stop();
-            charge_playing = false;
+        }
+
+        settingsOpen = true;
+
+        if (chargeAudio != null) {
+            chargeAudio.Stop();
+        }
+
+        chargePlaying = false;
+
+        if (chargeBar != null) {
             chargeBar.enabled = false;
         }
+
+        HideTrajectoryPoints();
     }
 
-    IEnumerator readyToPlay()
-    {
+    private IEnumerator readyToPlay() {
         yield return new WaitForSeconds(0.5f);
+
         settingsOpen = false;
-        settings_button.SetActive(true);
+
+        if (settings_button != null) {
+            settings_button.SetActive(true);
+        }
     }
 
-    public void closeTutorial()
-    {
-        tutorial.SetActive(false);
-        continueButton.SetActive(false);
-        audioClip = GameObject.Find("blipSelect").GetComponent<AudioSource>();
-        audioClip.Play();
+    public void closeTutorial() {
+        if (tutorial != null) {
+            tutorial.SetActive(false);
+        }
+
+        if (continueButton != null) {
+            continueButton.SetActive(false);
+        }
+
+        if (blipSelectAudio != null) {
+            blipSelectAudio.Play();
+        }
+
         StartCoroutine(closeTutorialEnum());
     }
 
-    IEnumerator closeTutorialEnum()
-    {
+    private IEnumerator closeTutorialEnum() {
         yield return new WaitForSeconds(0.5f);
         tutorialOpen = false;
     }
 
-    void ColorChanger()
-    {
-        Color chargeColor = Color.Lerp(Color.red, Color.green, (projSpeed / maxChargeSpeed));
-        chargeBar.color = chargeColor;
-    }
+    private void Fire() {
+        if (projectile == null || firePoint == null) {
+            return;
+        }
 
-    void ChargeBarFiller()
-    {
-        chargeBar.fillAmount = projSpeed / maxChargeSpeed;
-    }
-
-    void Fire()
-    {
         GameObject spawnedBullet = Instantiate(projectile, firePoint.position, firePoint.rotation);
-        Rigidbody2D rb = spawnedBullet.GetComponent<Rigidbody2D>();
-        rb.velocity = firePoint.right * projSpeed;
-        //rb.AddForce(firePoint.right * projSpeed, ForceMode2D.Impulse);        //origional firing
+        Rigidbody2D projectileRb = spawnedBullet.GetComponent<Rigidbody2D>();
+
+        if (projectileRb != null) {
+            projectileRb.velocity = firePoint.right * projSpeed;
+        }
     }
 
-    IEnumerator resetShot()
-    {
-
+    private IEnumerator resetShot() {
         yield return new WaitForSeconds(1f);
         cancelOrNot = true;
     }
 
-    public void lowerTutorialPegCount()
-    {
+    public void lowerTutorialPegCount() {
         tutorialPegsActive--;
     }
 
-    public int getTutorialPegsActive()
-    {
+    public int getTutorialPegsActive() {
         return tutorialPegsActive;
     }
 
-    public void tutorial2Open()
-    {
-        tutorial2.SetActive(true);
-        PlayButton.SetActive(true);
+    public void tutorial2Open() {
+        if (tutorial2 != null) {
+            tutorial2.SetActive(true);
+        }
+
+        if (PlayButton != null) {
+            PlayButton.SetActive(true);
+        }
     }
 
-    public void play()
-    {
-        audioClip = GameObject.Find("blipSelect").GetComponent<AudioSource>();
-        audioClip.Play();
-        StartCoroutine(changeScene("infiniteLevel", audioClip.clip.length));
+    public void play() {
+        if (blipSelectAudio != null) {
+            blipSelectAudio.Play();
+            StartCoroutine(changeScene("infiniteLevel", blipSelectAudio.clip.length));
+        }
+        else {
+            SceneManager.LoadScene("infiniteLevel");
+        }
     }
 
-    IEnumerator changeScene(string scene, float time)
-    {
+    private IEnumerator changeScene(string scene, float time) {
         yield return new WaitForSeconds(time);
         SceneManager.LoadScene(scene);
     }
 
-    public void setChargeButtonShoot()
-    {
-        chargeButtonShoot = 0;
+    public void setChargeButtonShoot() {
+        mobileShotState = MobileShotState.Idle;
     }
 }

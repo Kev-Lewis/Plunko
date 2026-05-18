@@ -4,20 +4,28 @@ using UnityEngine;
 
 public class planetScript : MonoBehaviour
 {
-    float randoSpeed;
-    // Start is called before the first frame update
-    void Start()
-    {
-        float randoSize = Random.Range(7f,9f);
-        randoSpeed = Random.Range(.3f,.7f);
-        transform.localScale = new Vector2((randoSpeed+.2f)*10,(randoSpeed+.2f)*10);
+    [Header("Movement Settings")]
+    [SerializeField] private float minSpeed = 0.3f;
+    [SerializeField] private float maxSpeed = 0.7f;
+    [SerializeField] private float destroyXPosition = 12.5f;
+
+    [Header("Size Settings")]
+    [SerializeField] private float minSize = 7f;
+    [SerializeField] private float maxSize = 9f;
+
+    private float moveSpeed;
+
+    private void Start() {
+        moveSpeed = Random.Range(minSpeed, maxSpeed);
+
+        float randomSize = Random.Range(minSize, maxSize);
+        transform.localScale = new Vector2(randomSize, randomSize);
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        transform.position += transform.right * randoSpeed * Time.deltaTime;
-        if(transform.position.x > 12.5f){
+    private void Update() {
+        transform.position += transform.right * moveSpeed * Time.deltaTime;
+
+        if (transform.position.x > destroyXPosition) {
             Destroy(gameObject);
         }
     }

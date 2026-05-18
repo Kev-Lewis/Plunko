@@ -4,59 +4,66 @@ using UnityEngine;
 
 public class Tutorials : MonoBehaviour
 {
-    public GameObject Tutorial1;
-    public GameObject Tutorial2;
-    public GameObject Tutorial3;
-    public GameObject NextTip;
-    public GameObject PrevTip;
-    private int whichTutorial;
-    private AudioSource audioClip;
-    // Start is called before the first frame update
-    void Start()
-    {
-        whichTutorial = 1;
+    [Header("Tutorial Pages")]
+    [SerializeField] private GameObject Tutorial1;
+    [SerializeField] private GameObject Tutorial2;
+    [SerializeField] private GameObject Tutorial3;
+
+    [Header("Buttons")]
+    [SerializeField] private GameObject NextTip;
+    [SerializeField] private GameObject PrevTip;
+
+    private const int FirstTutorial = 1;
+    private const int LastTutorial = 3;
+
+    private int whichTutorial = FirstTutorial;
+    private AudioSource blipSelect;
+
+    private void Start() {
+        CacheReferences();
+        UpdateTutorialPage();
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        if (whichTutorial == 1)
-        {
-            Tutorial1.SetActive(true);
-            Tutorial2.SetActive(false);
-            Tutorial3.SetActive(false);
-            NextTip.SetActive(true);
-            PrevTip.SetActive(false);
-        }
-        else if (whichTutorial == 2)
-        {
-            Tutorial1.SetActive(false);
-            Tutorial2.SetActive(true);
-            Tutorial3.SetActive(false);
-            PrevTip.SetActive(true);
-            NextTip.SetActive(true);
-        }
-        else if (whichTutorial == 3)
-        {
-            Tutorial1.SetActive(false);
-            Tutorial2.SetActive(false);
-            Tutorial3.SetActive(true);
-            PrevTip.SetActive(true);
-            NextTip.SetActive(false);
+    private void CacheReferences() {
+        GameObject audioObject = GameObject.Find("blipSelect");
+
+        if (audioObject != null) {
+            blipSelect = audioObject.GetComponent<AudioSource>();
         }
     }
 
-    public void nextTutorial()
-    {
-        audioClip = GameObject.Find("blipSelect").GetComponent<AudioSource>();
-        audioClip.Play();
-        whichTutorial++;
+    private void UpdateTutorialPage() {
+        SetPanelActive(Tutorial1, whichTutorial == 1);
+        SetPanelActive(Tutorial2, whichTutorial == 2);
+        SetPanelActive(Tutorial3, whichTutorial == 3);
+
+        SetPanelActive(PrevTip, whichTutorial > FirstTutorial);
+        SetPanelActive(NextTip, whichTutorial < LastTutorial);
     }
 
-    public void prevTutorial()
-    {
-        audioClip = GameObject.Find("blipSelect").GetComponent<AudioSource>();
-        audioClip.Play();
-        whichTutorial--;
+    public void nextTutorial() {
+        whichTutorial = Mathf.Clamp(whichTutorial + 1, FirstTutorial, LastTutorial);
+
+        PlaySelectSound();
+        UpdateTutorialPage();
+    }
+
+    public void prevTutorial() {
+        whichTutorial = Mathf.Clamp(whichTutorial - 1, FirstTutorial, LastTutorial);
+
+        PlaySelectSound();
+        UpdateTutorialPage();
+    }
+
+    private void SetPanelActive(GameObject panel, bool active) {
+        if (panel != null) {
+            panel.SetActive(active);
+        }
+    }
+
+    private void PlaySelectSound() {
+        if (blipSelect != null) {
+            blipSelect.Play();
+        }
     }
 }

@@ -1249,6 +1249,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3cbbff5328e71834d980a6879c796748, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  newRunButton: {fileID: 0}
 --- !u!4 &265158079
 Transform:
   m_ObjectHideFlags: 0
@@ -2901,7 +2902,7 @@ RectTransform:
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!95 &664985559
 Animator:
-  serializedVersion: 3
+  serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -2914,10 +2915,12 @@ Animator:
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
   m_WarningMessage: 
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
-  m_KeepAnimatorControllerStateOnDisable: 0
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!114 &664985560
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4562,6 +4565,7 @@ MonoBehaviour:
   AchieverT1: {fileID: 21300000, guid: 72de68c6b2ef0db4788a9f25e7edfa82, type: 3}
   AchieverT2: {fileID: 21300000, guid: b7bdce22e5fb7ca4c895f33f5adb8086, type: 3}
   AchieverT3: {fileID: 21300000, guid: e409e2a68c4927440a968348a53a130e, type: 3}
+  automaticCheckInterval: 0.5
   gameData:
     highScore: 0
     totalPegs: 0
@@ -5834,8 +5838,11 @@ MonoBehaviour:
   leaderBoardPanel: {fileID: 0}
   achievementPanel: {fileID: 0}
   areYouSurePanel: {fileID: 0}
+  customPanel: {fileID: 0}
   leaderboardClose: {fileID: 0}
   leaderboardClear: {fileID: 0}
+  continueRunButton: {fileID: 0}
+  newRunButton: {fileID: 0}
   highscoreText: {fileID: 1031686089}
   gameData:
     highScore: 0
@@ -5844,7 +5851,6 @@ MonoBehaviour:
     highestProjScore: 0
     shotsFired: 0
     tutorialBool: 0
-  customPanel: {fileID: 0}
 --- !u!4 &1219136005
 Transform:
   m_ObjectHideFlags: 0
@@ -7287,7 +7293,7 @@ MonoBehaviour:
   m_UseGraphicAlpha: 1
 --- !u!95 &1505119515
 Animator:
-  serializedVersion: 3
+  serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -7300,10 +7306,12 @@ Animator:
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
   m_WarningMessage: 
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
-  m_KeepAnimatorControllerStateOnDisable: 0
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &1512355382
 GameObject:
   m_ObjectHideFlags: 0
@@ -8085,6 +8093,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3cbbff5328e71834d980a6879c796748, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  newRunButton: {fileID: 0}
 --- !u!4 &1674689214
 Transform:
   m_ObjectHideFlags: 0
@@ -8846,10 +8855,18 @@ MonoBehaviour:
   firePoint: {fileID: 1254075570}
   ammoCount: 15
   aimingArrow: {fileID: 1059240222}
-  startingAmmoCount: 0
-  prevScore: 0
-  numberOfPoints: 20
   pointPrefab: {fileID: 4139577049771257277, guid: b9aae2a2478283f4f8fa1c0800d4ae5c, type: 3}
+  numberOfPoints: 20
+  usePredictiveCollisionTrace: 1
+  showAimingArrow: 0
+  traceCollisionMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  traceTimeStep: 0.04
+  traceRadius: 0.1
+  maxTraceBounces: 2
+  traceBounceDamping: 0.85
+  traceSkinWidth: 0.12
   ammoText: {fileID: 2071629814}
   maxChargeText: {fileID: 1242365025}
   scoreText: {fileID: 1036667929}
@@ -8858,6 +8875,12 @@ MonoBehaviour:
   chargeBar: {fileID: 2010441585}
   gameOverPanel: {fileID: 340428164}
   chargeImage: {fileID: 1257799683}
+  shootButton: {fileID: 1754538086}
+  shootButtonSprites:
+  - {fileID: 21300000, guid: 1ff6b6d4ac3b79b4c97d0f51b9768eae, type: 3}
+  - {fileID: 21300000, guid: 12224d952b635e04190b4d9b9dadc86e, type: 3}
+  cancelButton: {fileID: 1288221898}
+  settings_button: {fileID: 207482345}
   scorePopUpText: {fileID: 1505119512}
   unlockedPopUpText: {fileID: 664985561}
   imageOfPeg: {fileID: 752590187}
@@ -8866,13 +8889,10 @@ MonoBehaviour:
   - {fileID: 4210496325276549502, guid: 1c2fd964db94ebb46ada704f897fab75, type: 3}
   - {fileID: 4899892901382758538, guid: 00bdeaf98565af04aa5ebca58fd682b1, type: 3}
   - {fileID: 2982456161791319354, guid: e14dfcde260dbc048bc61ff11d6c1e6a, type: 3}
-  shootButton: {fileID: 1754538086}
-  shootButtonSprites:
-  - {fileID: 21300000, guid: 1ff6b6d4ac3b79b4c97d0f51b9768eae, type: 3}
-  - {fileID: 21300000, guid: 12224d952b635e04190b4d9b9dadc86e, type: 3}
-  cancelButton: {fileID: 1288221898}
-  countFPS: 20
-  duration: 40
+  originShooter: {fileID: 21300000, guid: 27df99f9f432b1143b71d1ccae628d40, type: 3}
+  customShooterSprite: {fileID: 21300000, guid: e97942c69ddc77349a5059d9bfa003f5, type: 3}
+  startingAmmoCount: 0
+  prevScore: 0
   gameData:
     highScore: 0
     totalPegs: 0
@@ -8880,9 +8900,6 @@ MonoBehaviour:
     highestProjScore: 0
     shotsFired: 0
     tutorialBool: 0
-  settings_button: {fileID: 207482345}
-  originShooter: {fileID: 21300000, guid: 27df99f9f432b1143b71d1ccae628d40, type: 3}
-  customShooterSprite: {fileID: 21300000, guid: e97942c69ddc77349a5059d9bfa003f5, type: 3}
 --- !u!212 &1839629348
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -9081,30 +9098,69 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 31d382c29adb39d4dbd128b9b8ae5961, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  useSeededGeneration: 1
+  seed: PL00001A3F
   normalPeg: {fileID: 9135564091863705734, guid: 9d261ec54a74a634ab824a88f18d20a8, type: 3}
   multiHitPeg: {fileID: 5798280649293468850, guid: 537f10e01f5bbcb4c81459e1909296f0, type: 3}
   pyramidPeg: {fileID: 7682112216410774768, guid: 86c87d354792b3a4698cf87bb0e2c89e, type: 3}
   blackholePeg: {fileID: 2909643028916232006, guid: 20b2abd8f3e7d9f4595698f0b077be90, type: 3}
   ammoPlusPeg: {fileID: 5376436236630286397, guid: 17ff368bd38820c4eb3e63fef5197fc3, type: 3}
   ammoMinusPeg: {fileID: 4923722983535407451, guid: 8711c40854ed0b5439521e959e2cbb5f, type: 3}
-  sliderPeg: {fileID: 5289716670651098844, guid: 157680405a48e5045a70abfd13a882fa, type: 3}
-  sliderPegShort: {fileID: 8159898017592129438, guid: 2f60642efb37c464d864bfbc178eebb8, type: 3}
-  paddle1: {fileID: 1559549080}
-  paddle2: {fileID: 683653729}
-  paddle3: {fileID: 1817727221}
-  paddle4: {fileID: 414457810}
-  slideCornerLeft: {fileID: 3078054164853691330, guid: 4b381559683668e40a69354beb7e6807, type: 3}
-  slideCornerRight: {fileID: 8081771549440666528, guid: 5f1291ede9655e4489efc0a67769048f, type: 3}
   x2Peg: {fileID: 2817718205275724507, guid: 3c0213ab7b220d84094abb55bb1bcf8f, type: 3}
   arrowPegLeft: {fileID: 2670464692429551062, guid: 88a42d6236e9a964e8465f7b76909095, type: 3}
   arrowPegUpLeft: {fileID: 2893375297879247810, guid: 921f08e5bf8a8e94b9de9dad13dca184, type: 3}
   arrowPegRight: {fileID: 7259045292941865854, guid: b2926733607b7f44791103e70da02af3, type: 3}
   arrowPegUpRight: {fileID: 8393714085440582648, guid: 95f30234650df0e4eb04a0058b02c061, type: 3}
   twoHitPeg: {fileID: 4857268918265874484, guid: f142145d3d72103479c216cd4317b867, type: 3}
+  sliderPeg: {fileID: 5289716670651098844, guid: 157680405a48e5045a70abfd13a882fa, type: 3}
+  sliderPegShort: {fileID: 8159898017592129438, guid: 2f60642efb37c464d864bfbc178eebb8, type: 3}
+  slideCornerLeft: {fileID: 3078054164853691330, guid: 4b381559683668e40a69354beb7e6807, type: 3}
+  slideCornerRight: {fileID: 8081771549440666528, guid: 5f1291ede9655e4489efc0a67769048f, type: 3}
+  paddle1: {fileID: 1559549080}
+  paddle2: {fileID: 683653729}
+  paddle3: {fileID: 1817727221}
+  paddle4: {fileID: 414457810}
   minRange: 25
   maxRange: 45
-  cam: {fileID: 519420031}
+  enabledPatterns: 
+  xGridSize: 8
+  yGridSize: 7
+  zeroX: -7.5
+  zeroY: 2
   spawnCount: 0
+  boardPrefabEntries:
+  - saveId: basicPeg
+    prefab: {fileID: 9135564091863705734, guid: 9d261ec54a74a634ab824a88f18d20a8, type: 3}
+  - saveId: multiHitPeg
+    prefab: {fileID: 5798280649293468850, guid: 537f10e01f5bbcb4c81459e1909296f0, type: 3}
+  - saveId: pyramidPeg
+    prefab: {fileID: 7682112216410774768, guid: 86c87d354792b3a4698cf87bb0e2c89e, type: 3}
+  - saveId: blackholePeg
+    prefab: {fileID: 2909643028916232006, guid: 20b2abd8f3e7d9f4595698f0b077be90, type: 3}
+  - saveId: ammoPlusPeg
+    prefab: {fileID: 5376436236630286397, guid: 17ff368bd38820c4eb3e63fef5197fc3, type: 3}
+  - saveId: ammoMinusPeg
+    prefab: {fileID: 4923722983535407451, guid: 8711c40854ed0b5439521e959e2cbb5f, type: 3}
+  - saveId: x2Peg
+    prefab: {fileID: 2817718205275724507, guid: 3c0213ab7b220d84094abb55bb1bcf8f, type: 3}
+  - saveId: arrowPegLeft
+    prefab: {fileID: 2670464692429551062, guid: 88a42d6236e9a964e8465f7b76909095, type: 3}
+  - saveId: arrowPegUpLeft
+    prefab: {fileID: 2893375297879247810, guid: 921f08e5bf8a8e94b9de9dad13dca184, type: 3}
+  - saveId: arrowPegRight
+    prefab: {fileID: 7259045292941865854, guid: b2926733607b7f44791103e70da02af3, type: 3}
+  - saveId: arrowPegUpRight
+    prefab: {fileID: 8393714085440582648, guid: 95f30234650df0e4eb04a0058b02c061, type: 3}
+  - saveId: twoHitPeg
+    prefab: {fileID: 4857268918265874484, guid: f142145d3d72103479c216cd4317b867, type: 3}
+  - saveId: slidePeg
+    prefab: {fileID: 5289716670651098844, guid: 157680405a48e5045a70abfd13a882fa, type: 3}
+  - saveId: slidePegShort
+    prefab: {fileID: 8159898017592129438, guid: 2f60642efb37c464d864bfbc178eebb8, type: 3}
+  - saveId: slidePegLeft
+    prefab: {fileID: 3078054164853691330, guid: 4b381559683668e40a69354beb7e6807, type: 3}
+  - saveId: slidePegRight
+    prefab: {fileID: 8081771549440666528, guid: 5f1291ede9655e4489efc0a67769048f, type: 3}
 --- !u!4 &1859420559
 Transform:
   m_ObjectHideFlags: 0
@@ -9712,6 +9768,55 @@ Transform:
   m_Children: []
   m_Father: {fileID: 114751550}
   m_RootOrder: 4
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2057977412
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2057977414}
+  - component: {fileID: 2057977413}
+  m_Layer: 0
+  m_Name: RunManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2057977413
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2057977412}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ffb1c649e4883d94889bfe12d2f5d4e6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  shooter: {fileID: 1839629347}
+  spawner: {fileID: 1859420558}
+  currentSeed: PL00001A3F
+  generateRandomSeedForNewRuns: 1
+  autoLoadRunOnStart: 1
+  autoSaveOnPause: 1
+--- !u!4 &2057977414
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2057977412}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 368.62656, y: 319.87396, z: -11.596779}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 29
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2071629812
 GameObject:

@@ -4,25 +4,36 @@ using UnityEngine;
 
 public class TutorialTwoHit : MonoBehaviour
 {
-    private SpriteRenderer sr;
-    public Sprite[] sprites;
-    private int whichSprite;
-    // Start is called before the first frame update
-    void Start()
-    {
-        sr = GetComponent<SpriteRenderer>();
-        whichSprite = 0;
-        sr.sprite = sprites[whichSprite];
+    [Header("Sprites")]
+    [SerializeField] private Sprite[] sprites;
+
+    private SpriteRenderer spriteRenderer;
+    private int currentHitIndex;
+
+    private void Start() {
+        spriteRenderer = GetComponent<SpriteRenderer>();
+        currentHitIndex = 0;
+
+        UpdateSprite();
     }
 
-    public bool hit()
-    {
-        whichSprite++;
-        if (whichSprite < 2)
-        {
-            sr.sprite = sprites[whichSprite];
+    public bool hit() {
+        currentHitIndex++;
+
+        if (currentHitIndex < sprites.Length) {
+            UpdateSprite();
             return false;
         }
+
         return true;
+    }
+
+    private void UpdateSprite() {
+        if (spriteRenderer == null || sprites == null || sprites.Length == 0) {
+            return;
+        }
+
+        int spriteIndex = Mathf.Clamp(currentHitIndex, 0, sprites.Length - 1);
+        spriteRenderer.sprite = sprites[spriteIndex];
     }
 }

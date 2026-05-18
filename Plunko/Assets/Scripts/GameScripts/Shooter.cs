@@ -87,12 +87,12 @@ public class Shooter : MonoBehaviour
     private bool isDesktop = true;
     private bool chargePlaying;
     private bool settingsOpen;
+    private bool shootingInputLocked;
+    private bool shotChargeStarted;
 
     private int globalMulti;
     private int localScore;
     private int activeArrowProjectiles;
-
-    private const int PopupScoreMultiplier = 10;
 
     private AudioSource chargeAudio;
     private AudioSource shootAudio;
@@ -104,6 +104,7 @@ public class Shooter : MonoBehaviour
     private Coroutine scorePopupCoroutine;
     private Coroutine scoreCountCoroutine;
     private Coroutine unlockedPopupCoroutine;
+    private Coroutine inputLockCoroutine;
 
     private bool bonus100Awarded;
     private bool bonus250Awarded;
@@ -220,6 +221,8 @@ public class Shooter : MonoBehaviour
         gameOver = false;
         settingsOpen = false;
         chargePlaying = false;
+        shootingInputLocked = false;
+        shotChargeStarted = false;
         globalMulti = 1;
         localScore = 0;
         activeArrowProjectiles = 0;
@@ -236,11 +239,11 @@ public class Shooter : MonoBehaviour
 
     private bool CanControlShooter() {
         bool tutorialOpen = settingsManager != null && settingsManager.getTutorialOpen();
-        return !gameOver && !settingsOpen && !tutorialOpen;
+        return !gameOver && !settingsOpen && !tutorialOpen && !shootingInputLocked;
     }
 
     private bool CanShoot() {
-        return cancelOrNot && !shooting && ammoCount > 0 && chanShootAgain && !ArrowProjectileActive;
+        return cancelOrNot && !shooting && ammoCount > 0 && chanShootAgain && !ArrowProjectileActive && !shootingInputLocked;
     }
 
     private bool IsChargeHeld() {
@@ -280,10 +283,16 @@ public class Shooter : MonoBehaviour
     private void HandleChargingAndShooting() {
         if (IsChargeHeld() && CanShoot()) {
             ContinueChargingShot();
+            shotChargeStarted = true;
         }
 
-        if (IsShotReleased() && CanShoot()) {
+        if (IsShotReleased() && CanShoot() && shotChargeStarted) {
             ReleaseChargedShot();
+            return;
+        }
+
+        if (IsShotReleased() && !shotChargeStarted) {
+            ResetChargeState(false);
         }
     }
 
@@ -298,6 +307,7 @@ public class Shooter : MonoBehaviour
 
     private void UpdateChargeSpeed() {
         float direction = chargeUpDown ? 1f : -1f;
+
         projSpeed += chargeSpeed * direction * Time.deltaTime;
         projSpeed = Mathf.Clamp(projSpeed, startingProjSpeed, maxChargeSpeed);
 
@@ -339,6 +349,7 @@ public class Shooter : MonoBehaviour
         shooting = true;
         localScore = 0;
         globalMulti = 1;
+        shotChargeStarted = false;
 
         ResetShotBonusAmmo();
         Fire();
@@ -351,6 +362,8 @@ public class Shooter : MonoBehaviour
     }
 
     private void ResetChargeState(bool allowShootAgainAfterDelay) {
+        shotChargeStarted = false;
+
         arrowLength = BaseArrowLength;
         projSpeed = startingProjSpeed;
         chargeUpDown = true;
@@ -671,7 +684,6 @@ public class Shooter : MonoBehaviour
         totalLevelsToSave = 0;
     }
 
-    // Debug helper function
     private void PrintHighestProjectileScoreCheck(int shotScoreToStore) {
         int currentStoredHigh = gameData != null ? gameData.highestProjScore : -1;
         bool willSave = shotScoreToStore > currentStoredHigh;
@@ -779,6 +791,10 @@ public class Shooter : MonoBehaviour
     }
 
     public void chargeShot() {
+        if (shootingInputLocked) {
+            return;
+        }
+
         mobileShotState = MobileShotState.Charging;
         cancelOrNot = true;
 
@@ -788,8 +804,13 @@ public class Shooter : MonoBehaviour
     }
 
     public void releaseShot() {
+        if (shootingInputLocked) {
+            return;
+        }
+
         if (mobileShotState == MobileShotState.Charging) {
             mobileShotState = MobileShotState.Released;
+            shotChargeStarted = true;
         }
 
         SetShootButtonSprite(0);
@@ -802,8 +823,13 @@ public class Shooter : MonoBehaviour
         }
 
         mobileShotState = MobileShotState.Idle;
+        shotChargeStarted = false;
         cancelOrNot = false;
-        chanShootAgain = true;
+
+        if (!shootingInputLocked) {
+            chanShootAgain = true;
+        }
+
         shooting = false;
         ResetChargeState(true);
     }
@@ -869,13 +895,17 @@ public class Shooter : MonoBehaviour
 
             if (!isDesktop) {
                 cancelOrNot = false;
-                chanShootAgain = true;
+
+                if (!shootingInputLocked) {
+                    chanShootAgain = true;
+                }
+
                 shooting = false;
                 ResetChargeState(true);
             }
         }
         else {
-            if (ammoCount > 0) {
+            if (ammoCount > 0 && !shootingInputLocked) {
                 chanShootAgain = true;
             }
 
@@ -1011,6 +1041,36 @@ public class Shooter : MonoBehaviour
         localScore = 0;
     }
 
+    public void LockShootingInput(float seconds) {
+        if (inputLockCoroutine != null) {
+            StopCoroutine(inputLockCoroutine);
+        }
+
+        inputLockCoroutine = StartCoroutine(LockShootingInputRoutine(seconds));
+    }
+
+    private IEnumerator LockShootingInputRoutine(float seconds) {
+        shootingInputLocked = true;
+        chanShootAgain = false;
+        shotChargeStarted = false;
+        mobileShotState = MobileShotState.Idle;
+        ResetChargeState(false);
+        HideTrajectoryPoints();
+
+        yield return new WaitForSeconds(seconds);
+
+        while (Input.GetMouseButton(0) || Input.touchCount > 0) {
+            yield return null;
+        }
+
+        yield return null;
+
+        shootingInputLocked = false;
+        chanShootAgain = true;
+        shotChargeStarted = false;
+        inputLockCoroutine = null;
+    }
+
     private IEnumerator spawnPlanet() {
         int waitTime = Random.Range(25, 35);
         yield return new WaitForSeconds(waitTime);
@@ -1025,7 +1085,10 @@ public class Shooter : MonoBehaviour
 
     private IEnumerator resetShot() {
         yield return new WaitForSeconds(1f);
-        cancelOrNot = true;
+
+        if (!shootingInputLocked) {
+            cancelOrNot = true;
+        }
     }
 
     private void OnDestroy() {

@@ -16,6 +16,7 @@ public class RunManager : MonoBehaviour
     [SerializeField] private bool generateRandomSeedForNewRuns = true;
     [SerializeField] private bool autoLoadRunOnStart = true;
     [SerializeField] private bool autoSaveOnPause = true;
+    [SerializeField] private float inputLockDuration = 0.35f;
 
     private RunSaveData currentRunData;
     private bool hasLoadedRun;
@@ -108,13 +109,15 @@ public class RunManager : MonoBehaviour
             spawner.StartNewSeededRun(currentSeed, true);
         }
 
+        LockShooterInput();
+
         currentRunData = BuildCurrentRunSaveData();
         currentRunData.hasActiveRun = true;
         hasLoadedRun = true;
 
-        SaveRunCheckpoint();
-
         runTransitionInProgress = false;
+
+        SaveRunCheckpoint();
     }
 
     public void SaveRunCheckpoint() {
@@ -225,10 +228,17 @@ public class RunManager : MonoBehaviour
 
             if (!restored) {
                 Debug.LogWarning("Saved board restore failed. Regenerating board from seed instead.");
+
+                spawner.ClearCurrentBoard();
+
+                yield return new WaitForEndOfFrame();
+
                 spawner.StartNewSeededRun(currentSeed, true);
                 spawner.SetLevelsCleared(loadedData.levelsCleared);
             }
         }
+
+        LockShooterInput();
 
         hasLoadedRun = true;
         runTransitionInProgress = false;
@@ -361,6 +371,12 @@ public class RunManager : MonoBehaviour
         data.savedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
         return data;
+    }
+
+    private void LockShooterInput() {
+        if (shooter != null) {
+            shooter.LockShootingInput(inputLockDuration);
+        }
     }
 
     private string NormalizeSeed(string seed) {

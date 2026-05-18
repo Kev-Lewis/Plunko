@@ -119,7 +119,7 @@ Rigidbody2D:
   m_AngularDrag: 0.05
   m_GravityScale: 1
   m_Material: {fileID: 0}
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_SleepingMode: 1
   m_CollisionDetection: 1
   m_Constraints: 0
@@ -138,13 +138,6 @@ MonoBehaviour:
   ps: {fileID: 9086636827832703256, guid: d92470440f188604ca08b8fef6384b56, type: 3}
   level_clear_ps: {fileID: 4230128689927453395, guid: c0ae8ea1122e15f4ab7e96f0d9e3b326, type: 3}
   ArrowProj: {fileID: 6858697834300230014, guid: ce09b76db2effea44a0f4cae8bf79fa0, type: 3}
-  gameData:
-    highScore: 0
-    totalPegs: 0
-    totalLevels: 0
-    highestProjScore: 0
-    shotsFired: 0
-    tutorialBool: 0
   customProj: {fileID: 21300000, guid: 8812e9e5b3911374ab00ec9883634f0b, type: 3}
 --- !u!96 &755342998716582247
 TrailRenderer:

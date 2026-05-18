@@ -354,6 +354,8 @@ public class Shooter : MonoBehaviour
         ResetShotBonusAmmo();
         Fire();
 
+        GameSpeedManager.BeginShotSpeed();
+
         if (shootAudio != null) {
             shootAudio.Play();
         }
@@ -543,6 +545,8 @@ public class Shooter : MonoBehaviour
         }
 
         if (fadeText && !ArrowProjectileActive) {
+            GameSpeedManager.EndShotSpeed();
+
             if (multiplierText != null) {
                 multiplierText.text = "";
             }
@@ -875,6 +879,8 @@ public class Shooter : MonoBehaviour
         }
 
         if (gameOver) {
+            GameSpeedManager.EndShotSpeed();
+            
             if (settingsButton != null) {
                 settingsButton.SetActive(false);
             }

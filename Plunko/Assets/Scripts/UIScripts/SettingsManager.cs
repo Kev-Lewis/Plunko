@@ -202,6 +202,7 @@ public class SettingsManager : MonoBehaviour
         UpdateAudioLevels();
 
         if (SceneManager.GetActiveScene().name == "infiniteLevel") {
+            GameSpeedManager.EndShotSpeed();
             SaveRunBeforeLeavingLevel();
         }
 

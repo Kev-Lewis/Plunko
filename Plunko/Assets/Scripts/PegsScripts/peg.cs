@@ -5,14 +5,17 @@ using UnityEngine;
 public class peg : MonoBehaviour
 {
     private Spawning spawn;
-    private void Start()
-    {
-        spawn = GameObject.Find("Spawner").GetComponent<Spawning>();
+
+    private void Start() {
+        GameObject spawnerObject = GameObject.Find("Spawner");
+
+        if (spawnerObject != null) {
+            spawn = spawnerObject.GetComponent<Spawning>();
+        }
     }
-    private void OnDestroy()
-    {
-        if (Shooter.gameOver == false)
-        {
+
+    private void OnDestroy() {
+        if (!Shooter.gameOver && spawn != null) {
             spawn.reduceCount();
         }
     }

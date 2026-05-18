@@ -52,7 +52,6 @@ public class Shooter : MonoBehaviour
     public Text unlockedPopUpText;
     public Image imageOfPeg;
     [HideInInspector] public bool fadeText = false;
-    [SerializeField] private float duration = 0.5f;
 
     [Header("Background")]
     [SerializeField] private GameObject[] planets;
@@ -105,6 +104,11 @@ public class Shooter : MonoBehaviour
     private Coroutine scorePopupCoroutine;
     private Coroutine scoreCountCoroutine;
     private Coroutine unlockedPopupCoroutine;
+
+    private bool bonus100Awarded;
+    private bool bonus250Awarded;
+    private bool bonus500Awarded;
+    private bool bonus1000Awarded;
 
     private bool ArrowProjectileActive {
         get { return activeArrowProjectiles > 0; }
@@ -336,6 +340,7 @@ public class Shooter : MonoBehaviour
         localScore = 0;
         globalMulti = 1;
 
+        ResetShotBonusAmmo();
         Fire();
 
         if (shootAudio != null) {
@@ -1027,5 +1032,36 @@ public class Shooter : MonoBehaviour
         if (gameData != null) {
             SaveSystem.Save(gameData);
         }
+    }
+
+    public void CheckShotBonusAmmo() {
+        int shotScore = getLocalScore();
+
+        if (shotScore >= 100 && !bonus100Awarded) {
+            bonus100Awarded = true;
+            ammoCount += 1;
+        }
+
+        if (shotScore >= 250 && !bonus250Awarded) {
+            bonus250Awarded = true;
+            ammoCount += 1;
+        }
+
+        if (shotScore >= 500 && !bonus500Awarded) {
+            bonus500Awarded = true;
+            ammoCount += 1;
+        }
+
+        if (shotScore >= 1000 && !bonus1000Awarded) {
+            bonus1000Awarded = true;
+            ammoCount += 2;
+        }
+    }
+
+    private void ResetShotBonusAmmo() {
+        bonus100Awarded = false;
+        bonus250Awarded = false;
+        bonus500Awarded = false;
+        bonus1000Awarded = false;
     }
 }

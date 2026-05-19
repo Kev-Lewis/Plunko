@@ -8855,18 +8855,30 @@ MonoBehaviour:
   firePoint: {fileID: 1254075570}
   ammoCount: 15
   aimingArrow: {fileID: 1059240222}
+  defaultPowerPercent: 0
+  minPowerPercent: 0
+  maxPowerPercent: 1
+  keyboardPowerAdjustSpeed: 0.75
+  mouseWheelPowerStep: 0.08
+  allowMouseClickToShoot: 0
+  minArrowPreviewLength: 0.75
+  maxArrowPreviewLength: 1.75
+  defaultAimAngle: -90
+  minAimAngle: -175
+  maxAimAngle: -5
+  aimTurnSpeed: 60
   pointPrefab: {fileID: 4139577049771257277, guid: b9aae2a2478283f4f8fa1c0800d4ae5c, type: 3}
-  numberOfPoints: 20
+  numberOfPoints: 60
   usePredictiveCollisionTrace: 1
   showAimingArrow: 0
   traceCollisionMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  traceTimeStep: 0.04
-  traceRadius: 0.1
+  traceTimeStep: 0.03
+  traceRadius: 0
   maxTraceBounces: 2
   traceBounceDamping: 0.85
-  traceSkinWidth: 0.12
+  traceSkinWidth: 0.01
   ammoText: {fileID: 2071629814}
   maxChargeText: {fileID: 1242365025}
   scoreText: {fileID: 1036667929}
@@ -9127,7 +9139,6 @@ MonoBehaviour:
   yGridSize: 7
   zeroX: -7.5
   zeroY: 2
-  spawnCount: 0
   boardPrefabEntries:
   - saveId: basicPeg
     prefab: {fileID: 9135564091863705734, guid: 9d261ec54a74a634ab824a88f18d20a8, type: 3}
@@ -9161,6 +9172,7 @@ MonoBehaviour:
     prefab: {fileID: 3078054164853691330, guid: 4b381559683668e40a69354beb7e6807, type: 3}
   - saveId: slidePegRight
     prefab: {fileID: 8081771549440666528, guid: 5f1291ede9655e4489efc0a67769048f, type: 3}
+  spawnCount: 0
 --- !u!4 &1859420559
 Transform:
   m_ObjectHideFlags: 0
@@ -9804,6 +9816,7 @@ MonoBehaviour:
   generateRandomSeedForNewRuns: 1
   autoLoadRunOnStart: 1
   autoSaveOnPause: 1
+  inputLockDuration: 0.35
 --- !u!4 &2057977414
 Transform:
   m_ObjectHideFlags: 0

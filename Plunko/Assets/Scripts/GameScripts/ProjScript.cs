@@ -53,7 +53,7 @@ public class ProjScript : MonoBehaviour
         CacheAudioSources();
     }
 
-    private void Update() {
+    private void FixedUpdate() {
         if (rb != null) {
             lastVelocity = rb.velocity;
         }
@@ -195,8 +195,13 @@ public class ProjScript : MonoBehaviour
 
         float speed = lastVelocity.magnitude;
 
+        if (speed <= 0.001f) {
+            return;
+        }
+
         Vector2 incomingDirection = lastVelocity.normalized;
-        Vector2 reflectedDirection = Vector2.Reflect(incomingDirection, collision.contacts[0].normal);
+        Vector2 collisionNormal = collision.contacts[0].normal.normalized;
+        Vector2 reflectedDirection = Vector2.Reflect(incomingDirection, collisionNormal);
 
         if (IsPegLikeCollision(collision.gameObject.tag)) {
             float speedT = Mathf.InverseLerp(3.5f, 9.5f, speed);
@@ -210,12 +215,12 @@ public class ProjScript : MonoBehaviour
                 softDeflectionBlend
             ).normalized;
 
-            rb.velocity = reflectedDirection * Mathf.Max(speed, 0f) * pegDamping;
+            rb.velocity = reflectedDirection * speed * pegDamping;
             return;
         }
 
         float damping = GetBounceDamping(collision.gameObject.tag);
-        rb.velocity = reflectedDirection * Mathf.Max(speed, 0f) * damping;
+        rb.velocity = reflectedDirection * speed * damping;
     }
 
     private float GetBounceDamping(string collisionTag) {

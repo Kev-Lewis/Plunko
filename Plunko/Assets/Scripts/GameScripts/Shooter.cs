@@ -33,21 +33,21 @@ public class Shooter : MonoBehaviour
 
     [Header("Desktop Aim Controls")]
     [SerializeField] private float defaultAimAngle = -90f;
-    [SerializeField] private float minAimAngle = -165f;
-    [SerializeField] private float maxAimAngle = -15f;
+    [SerializeField] private float minAimAngle = -175f;
+    [SerializeField] private float maxAimAngle = -5f;
     [SerializeField] private float aimTurnSpeed = 90f;
 
     [Header("Trajectory Preview")]
     [SerializeField] private GameObject pointPrefab;
-    [SerializeField] private int numberOfPoints = 35;
+    [SerializeField] private int numberOfPoints = 60;
     [SerializeField] private bool usePredictiveCollisionTrace = true;
     [SerializeField] private bool showAimingArrow = false;
     [SerializeField] private LayerMask traceCollisionMask = ~0;
-    [SerializeField] private float traceTimeStep = 0.04f;
-    [SerializeField] private float traceRadius = 0.10f;
+    [SerializeField] private float traceTimeStep = 0.03f;
+    [SerializeField] private float traceRadius = 0f;
     [SerializeField] private int maxTraceBounces = 2;
     [SerializeField] private float traceBounceDamping = 0.85f;
-    [SerializeField] private float traceSkinWidth = 0.12f;
+    [SerializeField] private float traceSkinWidth = 0.01f;
 
     [Header("UI Variables")]
     [SerializeField] private Text ammoText;
@@ -395,6 +395,13 @@ public class Shooter : MonoBehaviour
         aimDirection = transform.right;
     }
 
+    public void ResetPowerForNewRun() {
+        selectedPowerPercent = Mathf.Clamp(defaultPowerPercent, minPowerPercent, maxPowerPercent);
+        projSpeed = GetSelectedShotSpeed();
+        arrowLength = GetSelectedArrowLength();
+        ResetPowerVisuals();
+    }
+
     private float GetSelectedShotSpeed() {
         return Mathf.Lerp(startingProjSpeed, maxChargeSpeed, selectedPowerPercent);
     }
@@ -527,20 +534,33 @@ public class Shooter : MonoBehaviour
             RaycastHit2D hit = CastTrajectorySegment(position, travel);
 
             if (hit.collider != null && !ShouldIgnoreTraceHit(hit, lastHitCollider)) {
-                Vector2 hitPosition = hit.point;
+                Vector2 visualHitPosition = hit.point;
+                Vector2 centerHitPosition = GetTraceHitCenterPosition(hit);
 
-                SetTrajectoryPoint(visiblePointIndex, hitPosition);
+                SetTrajectoryPoint(visiblePointIndex, visualHitPosition);
                 visiblePointIndex++;
 
-                if (ShouldStopTraceAtHit(hit)) {
+                // Ground and peg-like objects stop the prediction.
+                // Peg bounce is too contact-sensitive to predict honestly.
+                if (ShouldStopTraceAtHit(hit) || IsPegLikeTraceHit(hit.collider.tag)) {
                     break;
                 }
 
-                velocity = Vector2.Reflect(nextVelocity, hit.normal) * traceBounceDamping;
-                position = hitPosition + hit.normal * traceSkinWidth;
+                // Only stable surfaces, like walls/slides, get predicted bounces.
+                Vector2 collisionVelocity = velocity + Physics2D.gravity * traceTimeStep * Mathf.Clamp01(hit.fraction);
+                Vector2 collisionNormal = GetStableTraceCollisionNormal(hit, centerHitPosition);
+
+                velocity = GetPredictedBounceVelocity(
+                    collisionVelocity,
+                    collisionNormal,
+                    hit.collider.tag
+                );
+
+                position = centerHitPosition + collisionNormal * traceSkinWidth;
                 lastHitCollider = hit.collider;
 
                 bounceCount++;
+
                 if (bounceCount >= maxTraceBounces) {
                     break;
                 }
@@ -556,14 +576,103 @@ public class Shooter : MonoBehaviour
         }
     }
 
+    private Vector2 GetTraceHitCenterPosition(RaycastHit2D hit) {
+        // Use the actual ray hit point so the preview behaves like the old aim line.
+        // This avoids the CircleCast-style "lock on" where the preview stops beside nearby pegs.
+        return hit.point;
+    }
+
+    private Vector2 GetStableTraceCollisionNormal(RaycastHit2D hit, Vector2 hitCenterPosition) {
+        if (hit.normal.sqrMagnitude > 0.0001f) {
+            return hit.normal.normalized;
+        }
+
+        if (hit.collider != null) {
+            Vector2 colliderCenter = hit.collider.bounds.center;
+            Vector2 fallbackNormal = hitCenterPosition - colliderCenter;
+
+            if (fallbackNormal.sqrMagnitude > 0.0001f) {
+                return fallbackNormal.normalized;
+            }
+        }
+
+        return Vector2.up;
+    }
+
+    private Vector2 GetPredictedBounceVelocity(Vector2 incomingVelocity, Vector2 normal, string hitTag) {
+        float speed = incomingVelocity.magnitude;
+
+        if (speed <= 0.001f) {
+            return Vector2.zero;
+        }
+
+        Vector2 incomingDirection = incomingVelocity.normalized;
+        Vector2 reflectedDirection = Vector2.Reflect(incomingDirection, normal.normalized);
+
+        if (IsPegLikeTraceHit(hitTag)) {
+            float speedT = Mathf.InverseLerp(3.5f, 9.5f, speed);
+
+            float pegDamping = Mathf.Lerp(0.62f, 0.9f, speedT);
+            float softDeflectionBlend = Mathf.Lerp(0.45f, 0.08f, speedT);
+
+            reflectedDirection = Vector2.Lerp(
+                reflectedDirection.normalized,
+                incomingDirection,
+                softDeflectionBlend
+            ).normalized;
+
+            return reflectedDirection * speed * pegDamping;
+        }
+
+        float damping = GetTraceBounceDamping(hitTag);
+        return reflectedDirection * speed * damping;
+    }
+
+    private float GetTraceBounceDamping(string hitTag) {
+        switch (hitTag) {
+            case "wall":
+                return 0.92f;
+
+            case "slide":
+                return 0.88f;
+
+            case "Ground":
+                return 0f;
+
+            default:
+                return 0.8f;
+        }
+    }
+
+    private bool IsPegLikeTraceHit(string hitTag) {
+        switch (hitTag) {
+            case "Peg":
+            case "MultiHitPeg":
+            case "TwoHitPeg":
+            case "Pyramid":
+            case "PyramidPeg":
+            case "AmmoPlus":
+            case "AmmoMinus":
+            case "x2":
+            case "ArrowLeft":
+            case "ArrowRight":
+            case "ArrowUpLeft":
+            case "ArrowUpRight":
+            case "Nuke":
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
     private RaycastHit2D CastTrajectorySegment(Vector2 start, Vector2 travel) {
         Vector2 direction = travel.normalized;
         float distance = travel.magnitude;
 
-        if (traceRadius > 0f) {
-            return Physics2D.CircleCast(start, traceRadius, direction, distance, traceCollisionMask);
-        }
-
+        // Use a thin Raycast instead of CircleCast.
+        // This makes the preview only stop when the center aim line actually hits a peg/wall/slide,
+        // instead of snapping to nearby pegs based on projectile radius.
         return Physics2D.Raycast(start, direction, distance, traceCollisionMask);
     }
 
@@ -573,6 +682,11 @@ public class Shooter : MonoBehaviour
         }
 
         if (hit.collider == lastHitCollider) {
+            return true;
+        }
+
+        // Ignore most triggers, but allow slide triggers so the preview can bounce off slide pegs.
+        if (hit.collider.isTrigger && !hit.collider.CompareTag("slide")) {
             return true;
         }
 
@@ -1263,13 +1377,5 @@ public class Shooter : MonoBehaviour
 
     public bool HasActiveArrowProjectiles() {
         return ArrowProjectileActive;
-    }
-
-    public void ResetPowerForNewRun() {
-        selectedPowerPercent = Mathf.Clamp(defaultPowerPercent, minPowerPercent, maxPowerPercent);
-        projSpeed = GetSelectedShotSpeed();
-        arrowLength = GetSelectedArrowLength();
-
-        ResetPowerVisuals();
     }
 }

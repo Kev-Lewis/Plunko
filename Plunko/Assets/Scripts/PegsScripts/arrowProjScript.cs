@@ -29,15 +29,14 @@ public class arrowProjScript : MonoBehaviour
     private AudioSource blackHoleAudio;
 
     private int tempScore;
+    private bool registeredWithShooter;
+    private bool groundHitProcessed;
 
     private void Start() {
         CacheComponents();
         CacheSceneReferences();
         CacheAudioSources();
-
-        if (shoot != null) {
-            shoot.activateArrowProj();
-        }
+        RegisterWithShooter();
     }
 
     private void Update() {
@@ -85,6 +84,24 @@ public class arrowProjScript : MonoBehaviour
         return audioObject != null ? audioObject.GetComponent<AudioSource>() : null;
     }
 
+    private void RegisterWithShooter() {
+        if (shoot == null || registeredWithShooter) {
+            return;
+        }
+
+        shoot.activateArrowProj();
+        registeredWithShooter = true;
+    }
+
+    private void UnregisterFromShooter() {
+        if (!registeredWithShooter || shoot == null) {
+            return;
+        }
+
+        shoot.deactivateArrowProj();
+        registeredWithShooter = false;
+    }
+
     private void OnCollisionEnter2D(Collision2D other) {
         ApplyBounce(other);
 
@@ -110,6 +127,10 @@ public class arrowProjScript : MonoBehaviour
             case "TwoHitPeg":
                 HitTwoHitPeg(other.gameObject);
                 break;
+            case "Pyramid":
+            case "PyramidPeg":
+                HitPyramidPeg(other.gameObject);
+                break;
             case "wall":
                 PlaySound(popAudio);
                 break;
@@ -127,6 +148,9 @@ public class arrowProjScript : MonoBehaviour
                 break;
             case "ArrowUpRight":
                 HitArrowPeg(other.gameObject, "LauncherLeft", new Vector3(1f, 1f, 0f));
+                break;
+            case "Nuke":
+                HitNuke(other.gameObject);
                 break;
         }
     }
@@ -149,6 +173,11 @@ public class arrowProjScript : MonoBehaviour
     }
 
     private void HitGround() {
+        if (groundHitProcessed) {
+            return;
+        }
+
+        groundHitProcessed = true;
         Destroy(gameObject);
     }
 
@@ -211,6 +240,36 @@ public class arrowProjScript : MonoBehaviour
         PlaySound(popAudio);
     }
 
+    private void HitPyramidPeg(GameObject peg) {
+        RegisterPegHit();
+
+        twoHitScript twoHit = peg.GetComponent<twoHitScript>();
+        if (twoHit != null) {
+            if (twoHit.hit()) {
+                DestroyPegWithParticles(peg);
+                AddScoreToShot(BasePegScore * 2);
+            }
+
+            PlaySound(popAudio);
+            return;
+        }
+
+        MultiHit multiHit = peg.GetComponent<MultiHit>();
+        if (multiHit != null) {
+            if (multiHit.hit()) {
+                DestroyPegWithParticles(peg);
+                AddScoreToShot(BasePegScore * 3);
+            }
+
+            PlaySound(popAudio);
+            return;
+        }
+
+        DestroyPegWithParticles(peg);
+        AddScoreToShot(BasePegScore);
+        PlaySound(popAudio);
+    }
+
     private void HitX2Peg(GameObject peg) {
         RegisterPegHit();
 
@@ -227,6 +286,12 @@ public class arrowProjScript : MonoBehaviour
         RegisterPegHit();
         SpawnArrowProjectile(launcherName, direction);
         Destroy(peg);
+    }
+
+    private void HitNuke(GameObject peg) {
+        RegisterPegHit();
+        Destroy(peg);
+        PlaySound(popAudio);
     }
 
     private void OnTriggerEnter2D(Collider2D collision) {
@@ -281,9 +346,6 @@ public class arrowProjScript : MonoBehaviour
         }
 
         shoot.addTotalScore(scoreValue, shoot.getGlobalMulti());
-
-        // This is the important fix.
-        // Arrow projectile score now counts toward bonus ammo thresholds.
         shoot.CheckShotBonusAmmo();
 
         tempScore = shoot.getLocalScore();
@@ -384,8 +446,6 @@ public class arrowProjScript : MonoBehaviour
     }
 
     private void OnDestroy() {
-        if (shoot != null) {
-            shoot.deactivateArrowProj();
-        }
+        UnregisterFromShooter();
     }
 }

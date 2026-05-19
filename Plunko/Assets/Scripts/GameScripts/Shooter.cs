@@ -1231,4 +1231,8 @@ public class Shooter : MonoBehaviour
 
         return objectName.Replace("(Clone)", "").Trim();
     }
+
+    public bool HasActiveArrowProjectiles() {
+        return ArrowProjectileActive;
+    }
 }

@@ -294,6 +294,18 @@ public class ProjScript : MonoBehaviour
 
         Debug.Log("Projectile hit ground. RunManager exists: " + (RunManager.Instance != null));
 
+        HideGroundedProjectile();
+
+        StartCoroutine(ResolveShotAfterAllProjectiles());
+    }
+
+    private IEnumerator ResolveShotAfterAllProjectiles() {
+        while (shoot != null && shoot.HasActiveArrowProjectiles()) {
+            yield return null;
+        }
+
+        yield return new WaitForEndOfFrame();
+
         Shooter.totalPegsToSave += totalPegCounter;
         ResetPopPitch();
 
@@ -331,6 +343,28 @@ public class ProjScript : MonoBehaviour
         }
 
         Destroy(gameObject);
+    }
+
+    private void HideGroundedProjectile() {
+        if (rb != null) {
+            rb.velocity = Vector2.zero;
+            rb.simulated = false;
+        }
+
+        Collider2D collider = GetComponent<Collider2D>();
+        if (collider != null) {
+            collider.enabled = false;
+        }
+
+        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
+        if (spriteRenderer != null) {
+            spriteRenderer.enabled = false;
+        }
+
+        TrailRenderer trailRenderer = GetComponent<TrailRenderer>();
+        if (trailRenderer != null) {
+            trailRenderer.enabled = false;
+        }
     }
 
     private void ClearLevel() {

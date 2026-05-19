@@ -99,8 +99,7 @@ public class RunManager : MonoBehaviour
             shooter.ammoCount = startingAmmo;
             shooter.prevScore = 0;
             shooter.resetLocalScore();
-
-            shooter.RestorePlanetState(new List<PlanetSaveData>());
+            shooter.ResetPowerForNewRun();
         }
 
         if (spawner != null) {

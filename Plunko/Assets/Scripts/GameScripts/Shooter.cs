@@ -21,6 +21,22 @@ public class Shooter : MonoBehaviour
     [SerializeField] public int ammoCount;
     [SerializeField] private GameObject aimingArrow;
 
+    [Header("Desktop Power Controls")]
+    [SerializeField] private float defaultPowerPercent = 0f;
+    [SerializeField] private float minPowerPercent = 0f;
+    [SerializeField] private float maxPowerPercent = 1.00f;
+    [SerializeField] private float keyboardPowerAdjustSpeed = 0.75f;
+    [SerializeField] private float mouseWheelPowerStep = 0.08f;
+    [SerializeField] private bool allowMouseClickToShoot = false;
+    [SerializeField] private float minArrowPreviewLength = 0.75f;
+    [SerializeField] private float maxArrowPreviewLength = 1.75f;
+
+    [Header("Desktop Aim Controls")]
+    [SerializeField] private float defaultAimAngle = -90f;
+    [SerializeField] private float minAimAngle = -165f;
+    [SerializeField] private float maxAimAngle = -15f;
+    [SerializeField] private float aimTurnSpeed = 90f;
+
     [Header("Trajectory Preview")]
     [SerializeField] private GameObject pointPrefab;
     [SerializeField] private int numberOfPoints = 35;
@@ -81,8 +97,10 @@ public class Shooter : MonoBehaviour
     private MobileShotState mobileShotState = MobileShotState.Idle;
 
     private float startingProjSpeed;
+    private float selectedPowerPercent;
+    private float currentAimAngle;
     private float arrowLength = BaseArrowLength;
-    private bool chargeUpDown = true;
+
     private bool cancelOrNot = true;
     private bool isDesktop = true;
     private bool chargePlaying;
@@ -118,9 +136,9 @@ public class Shooter : MonoBehaviour
     private void Awake() {
         mainCamera = Camera.main;
         gameData = SaveSystem.Load();
-        isDesktop = SystemInfo.deviceType != DeviceType.Handheld;
+        isDesktop = true;
 
-        if (isDesktop && shootButton != null) {
+        if (shootButton != null) {
             shootButton.SetActive(false);
         }
 
@@ -139,7 +157,9 @@ public class Shooter : MonoBehaviour
 
         if (CanControlShooter()) {
             UpdateAiming();
-            HandleChargingAndShooting();
+            HandlePowerInput();
+            UpdateShotPreview();
+            HandleShootInput();
         }
         else {
             HideTrajectoryPoints();
@@ -214,8 +234,12 @@ public class Shooter : MonoBehaviour
     private void InitializeRunState() {
         startingAmmoCount = ammoCount;
         startingProjSpeed = projSpeed;
-        arrowLength = BaseArrowLength;
-        chargeUpDown = true;
+
+        ResetPowerForNewRun();
+
+        currentAimAngle = Mathf.Clamp(defaultAimAngle, minAimAngle, maxAimAngle);
+        transform.rotation = Quaternion.Euler(0f, 0f, currentAimAngle);
+
         chanShootAgain = true;
         shooting = false;
         gameOver = false;
@@ -246,79 +270,173 @@ public class Shooter : MonoBehaviour
         return cancelOrNot && !shooting && ammoCount > 0 && chanShootAgain && !ArrowProjectileActive && !shootingInputLocked;
     }
 
-    private bool IsChargeHeld() {
-        return (isDesktop && Input.GetMouseButton(0)) || (!isDesktop && mobileShotState == MobileShotState.Charging);
-    }
-
-    private bool IsShotReleased() {
-        return (isDesktop && Input.GetMouseButtonUp(0)) || (!isDesktop && mobileShotState == MobileShotState.Released);
+    private bool CanPreviewShot() {
+        return !shooting && ammoCount > 0 && !ArrowProjectileActive && !shootingInputLocked;
     }
 
     private void UpdateAiming() {
-        if (mainCamera == null) {
-            mainCamera = Camera.main;
-        }
-
-        if (mainCamera == null) {
+        if (!CanPreviewShot()) {
             return;
         }
 
-        if (!isDesktop && mobileShotState != MobileShotState.Idle) {
-            return;
+        float aimInput = 0f;
+
+        if (Input.GetKey(KeyCode.LeftArrow)) {
+            aimInput -= 1f;
         }
 
-        Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-        Vector2 rawDirection = mouseWorldPosition - transform.position;
-
-        if (rawDirection.sqrMagnitude <= 0.0001f) {
-            return;
+        if (Input.GetKey(KeyCode.RightArrow)) {
+            aimInput += 1f;
         }
 
-        aimDirection = rawDirection.normalized;
+        if (Mathf.Abs(aimInput) > 0.01f) {
+            currentAimAngle += aimInput * aimTurnSpeed * Time.deltaTime;
+            currentAimAngle = Mathf.Clamp(currentAimAngle, minAimAngle, maxAimAngle);
+        }
 
-        float rotationZ = Mathf.Atan2(aimDirection.y, aimDirection.x) * Mathf.Rad2Deg;
-        transform.rotation = Quaternion.Euler(0f, 0f, rotationZ);
+        transform.rotation = Quaternion.Euler(0f, 0f, currentAimAngle);
+        aimDirection = transform.right;
     }
 
-    private void HandleChargingAndShooting() {
-        if (IsChargeHeld() && CanShoot()) {
-            ContinueChargingShot();
-            shotChargeStarted = true;
-        }
-
-        if (IsShotReleased() && CanShoot() && shotChargeStarted) {
-            ReleaseChargedShot();
+    private void HandlePowerInput() {
+        if (!CanPreviewShot()) {
             return;
         }
 
-        if (IsShotReleased() && !shotChargeStarted) {
-            ResetChargeState(false);
+        float scroll = Input.mouseScrollDelta.y;
+        if (Mathf.Abs(scroll) > 0.01f) {
+            AdjustPower(scroll * mouseWheelPowerStep);
+        }
+
+        float keyboardDirection = 0f;
+
+        if (Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.W)) {
+            keyboardDirection += 1f;
+        }
+
+        if (Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.S)) {
+            keyboardDirection -= 1f;
+        }
+
+        if (Mathf.Abs(keyboardDirection) > 0.01f) {
+            AdjustPower(keyboardDirection * keyboardPowerAdjustSpeed * Time.deltaTime);
+        }
+
+        if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1)) {
+            SetPowerPreset(0.35f);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2)) {
+            SetPowerPreset(0.55f);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3)) {
+            SetPowerPreset(0.75f);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4)) {
+            SetPowerPreset(1.00f);
+        }
+
+        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(1)) {
+            ResetPowerToDefault();
+            ResetAimToDefault();
         }
     }
 
-    private void ContinueChargingShot() {
-        SetChargeVisualsActive(true);
-        UpdateChargeSpeed();
+    private void HandleShootInput() {
+        if (!CanShoot()) {
+            return;
+        }
+
+        bool pressedSpace = Input.GetKeyDown(KeyCode.Space);
+        bool clickedMouse = allowMouseClickToShoot && Input.GetMouseButtonDown(0);
+
+        if (pressedSpace || clickedMouse) {
+            FireSelectedShot();
+        }
+    }
+
+    private void UpdateShotPreview() {
+        if (!CanPreviewShot()) {
+            ResetPowerVisuals();
+            HideTrajectoryPoints();
+            return;
+        }
+
+        projSpeed = GetSelectedShotSpeed();
+        arrowLength = GetSelectedArrowLength();
+
+        UpdatePowerVisuals();
         UpdateAimingArrow();
         UpdateTrajectoryPreview();
-        PlayChargeAudio();
-        UpdateChargeBar();
     }
 
-    private void UpdateChargeSpeed() {
-        float direction = chargeUpDown ? 1f : -1f;
+    private void AdjustPower(float amount) {
+        selectedPowerPercent = Mathf.Clamp(
+            selectedPowerPercent + amount,
+            minPowerPercent,
+            maxPowerPercent
+        );
 
-        projSpeed += chargeSpeed * direction * Time.deltaTime;
-        projSpeed = Mathf.Clamp(projSpeed, startingProjSpeed, maxChargeSpeed);
+        projSpeed = GetSelectedShotSpeed();
+    }
 
-        arrowLength += 0.15f * direction * Time.deltaTime;
-        arrowLength = Mathf.Max(BaseArrowLength, arrowLength);
+    private void SetPowerPreset(float powerPercent) {
+        selectedPowerPercent = Mathf.Clamp(powerPercent, minPowerPercent, maxPowerPercent);
+        projSpeed = GetSelectedShotSpeed();
+    }
 
-        if (projSpeed >= maxChargeSpeed) {
-            chargeUpDown = false;
+    private void ResetPowerToDefault() {
+        selectedPowerPercent = Mathf.Clamp(defaultPowerPercent, minPowerPercent, maxPowerPercent);
+        projSpeed = GetSelectedShotSpeed();
+    }
+
+    private void ResetAimToDefault() {
+        currentAimAngle = Mathf.Clamp(defaultAimAngle, minAimAngle, maxAimAngle);
+        transform.rotation = Quaternion.Euler(0f, 0f, currentAimAngle);
+        aimDirection = transform.right;
+    }
+
+    private float GetSelectedShotSpeed() {
+        return Mathf.Lerp(startingProjSpeed, maxChargeSpeed, selectedPowerPercent);
+    }
+
+    private float GetSelectedArrowLength() {
+        return Mathf.Lerp(minArrowPreviewLength, maxArrowPreviewLength, selectedPowerPercent);
+    }
+
+    private void UpdatePowerVisuals() {
+        if (chargeBar != null) {
+            chargeBar.enabled = true;
+            chargeBar.fillAmount = selectedPowerPercent;
+            chargeBar.color = Color.Lerp(Color.red, Color.green, selectedPowerPercent);
         }
-        else if (projSpeed <= startingProjSpeed) {
-            chargeUpDown = true;
+
+        if (chargeImage != null) {
+            chargeImage.SetActive(true);
+        }
+
+        if (maxChargeText != null) {
+            int displayPercent = Mathf.RoundToInt(selectedPowerPercent * 100f);
+            maxChargeText.enabled = true;
+            maxChargeText.text = "Power: " + displayPercent + "%";
+        }
+    }
+
+    private void ResetPowerVisuals() {
+        if (chargeBar != null) {
+            chargeBar.fillAmount = 0f;
+            chargeBar.enabled = false;
+        }
+
+        if (chargeImage != null) {
+            chargeImage.SetActive(false);
+        }
+
+        if (maxChargeText != null) {
+            maxChargeText.enabled = false;
+        }
+
+        if (aimingArrow != null) {
+            aimingArrow.SetActive(false);
         }
     }
 
@@ -336,20 +454,14 @@ public class Shooter : MonoBehaviour
         aimingArrow.transform.localScale = new Vector2(arrowLength, aimingArrow.transform.localScale.y);
     }
 
-    private void PlayChargeAudio() {
-        if (chargeAudio == null || chargePlaying) {
-            return;
-        }
-
-        chargeAudio.Play();
-        chargePlaying = true;
-    }
-
-    private void ReleaseChargedShot() {
+    private void FireSelectedShot() {
         shooting = true;
         localScore = 0;
         globalMulti = 1;
         shotChargeStarted = false;
+        mobileShotState = MobileShotState.Idle;
+
+        projSpeed = GetSelectedShotSpeed();
 
         ResetShotBonusAmmo();
         Fire();
@@ -360,53 +472,8 @@ public class Shooter : MonoBehaviour
             shootAudio.Play();
         }
 
-        ResetChargeState(false);
-    }
-
-    private void ResetChargeState(bool allowShootAgainAfterDelay) {
-        shotChargeStarted = false;
-
-        arrowLength = BaseArrowLength;
-        projSpeed = startingProjSpeed;
-        chargeUpDown = true;
-        mobileShotState = MobileShotState.Idle;
-
-        if (aimingArrow != null) {
-            aimingArrow.SetActive(false);
-        }
-
-        if (chargeAudio != null) {
-            chargeAudio.Stop();
-        }
-
-        chargePlaying = false;
-
-        if (chargeBar != null) {
-            chargeBar.fillAmount = 0f;
-            chargeBar.enabled = false;
-        }
-
-        SetShootButtonSprite(0);
         HideTrajectoryPoints();
-
-        if (allowShootAgainAfterDelay) {
-            StartCoroutine(resetShot());
-        }
-    }
-
-    private void SetChargeVisualsActive(bool active) {
-        if (chargeBar != null) {
-            chargeBar.enabled = active;
-        }
-    }
-
-    private void UpdateChargeBar() {
-        if (chargeBar == null) {
-            return;
-        }
-
-        chargeBar.fillAmount = projSpeed / maxChargeSpeed;
-        chargeBar.color = Color.Lerp(Color.red, Color.green, chargeBar.fillAmount);
+        ResetPowerVisuals();
     }
 
     private void UpdateTrajectoryPreview() {
@@ -430,7 +497,6 @@ public class Shooter : MonoBehaviour
         }
     }
 
-    // ignore ground for trace
     private bool ShouldStopTraceAtHit(RaycastHit2D hit) {
         if (hit.collider == null) {
             return false;
@@ -565,16 +631,6 @@ public class Shooter : MonoBehaviour
             }
 
             StartScorePopup();
-        }
-
-        bool hasCharge = chargeBar != null && chargeBar.fillAmount > 0.01f;
-
-        if (maxChargeText != null) {
-            maxChargeText.enabled = hasCharge;
-        }
-
-        if (chargeImage != null) {
-            chargeImage.SetActive(hasCharge);
         }
     }
 
@@ -812,12 +868,7 @@ public class Shooter : MonoBehaviour
             return;
         }
 
-        mobileShotState = MobileShotState.Charging;
-        cancelOrNot = true;
-
-        if (!shooting) {
-            SetShootButtonSprite(1);
-        }
+        SetPowerPreset(0.55f);
     }
 
     public void releaseShot() {
@@ -825,30 +876,18 @@ public class Shooter : MonoBehaviour
             return;
         }
 
-        if (mobileShotState == MobileShotState.Charging) {
-            mobileShotState = MobileShotState.Released;
-            shotChargeStarted = true;
+        if (CanShoot()) {
+            FireSelectedShot();
         }
-
-        SetShootButtonSprite(0);
-        HideTrajectoryPoints();
     }
 
     public void cancelShot() {
-        if (mobileShotState != MobileShotState.Charging) {
-            return;
-        }
-
+        ResetPowerToDefault();
+        ResetAimToDefault();
         mobileShotState = MobileShotState.Idle;
         shotChargeStarted = false;
-        cancelOrNot = false;
-
-        if (!shootingInputLocked) {
-            chanShootAgain = true;
-        }
-
-        shooting = false;
-        ResetChargeState(true);
+        cancelOrNot = true;
+        HideTrajectoryPoints();
     }
 
     private void SetShootButtonSprite(int spriteIndex) {
@@ -893,7 +932,7 @@ public class Shooter : MonoBehaviour
 
         if (gameOver) {
             GameSpeedManager.EndShotSpeed();
-            
+
             if (settingsButton != null) {
                 settingsButton.SetActive(false);
             }
@@ -912,16 +951,10 @@ public class Shooter : MonoBehaviour
                 multiplierText.text = "";
             }
 
-            if (!isDesktop) {
-                cancelOrNot = false;
-
-                if (!shootingInputLocked) {
-                    chanShootAgain = true;
-                }
-
-                shooting = false;
-                ResetChargeState(true);
-            }
+            cancelOrNot = false;
+            shooting = false;
+            ResetPowerVisuals();
+            HideTrajectoryPoints();
         }
         else {
             if (ammoCount > 0 && !shootingInputLocked) {
@@ -959,11 +992,7 @@ public class Shooter : MonoBehaviour
         }
 
         chargePlaying = false;
-
-        if (chargeBar != null) {
-            chargeBar.enabled = false;
-        }
-
+        ResetPowerVisuals();
         fadeText = false;
 
         if (scorePopupCoroutine != null) {
@@ -1073,8 +1102,8 @@ public class Shooter : MonoBehaviour
         chanShootAgain = false;
         shotChargeStarted = false;
         mobileShotState = MobileShotState.Idle;
-        ResetChargeState(false);
         HideTrajectoryPoints();
+        ResetPowerVisuals();
 
         yield return new WaitForSeconds(seconds);
 
@@ -1234,5 +1263,13 @@ public class Shooter : MonoBehaviour
 
     public bool HasActiveArrowProjectiles() {
         return ArrowProjectileActive;
+    }
+
+    public void ResetPowerForNewRun() {
+        selectedPowerPercent = Mathf.Clamp(defaultPowerPercent, minPowerPercent, maxPowerPercent);
+        projSpeed = GetSelectedShotSpeed();
+        arrowLength = GetSelectedArrowLength();
+
+        ResetPowerVisuals();
     }
 }

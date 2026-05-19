@@ -161,8 +161,67 @@ public class arrowProjScript : MonoBehaviour
         }
 
         float speed = lastVelocity.magnitude;
-        Vector3 direction = Vector3.Reflect(lastVelocity.normalized, collision.contacts[0].normal);
-        rb.velocity = direction * Mathf.Max(speed, 0f) * BounceDamping;
+
+        Vector2 incomingDirection = lastVelocity.normalized;
+        Vector2 reflectedDirection = Vector2.Reflect(incomingDirection, collision.contacts[0].normal);
+
+        if (IsPegLikeCollision(collision.gameObject.tag)) {
+            float speedT = Mathf.InverseLerp(3.5f, 9.5f, speed);
+
+            float pegDamping = Mathf.Lerp(0.62f, 0.9f, speedT);
+            float softDeflectionBlend = Mathf.Lerp(0.45f, 0.08f, speedT);
+
+            reflectedDirection = Vector2.Lerp(
+                reflectedDirection.normalized,
+                incomingDirection,
+                softDeflectionBlend
+            ).normalized;
+
+            rb.velocity = reflectedDirection * Mathf.Max(speed, 0f) * pegDamping;
+            return;
+        }
+
+        float damping = GetBounceDamping(collision.gameObject.tag);
+        rb.velocity = reflectedDirection * Mathf.Max(speed, 0f) * damping;
+    }
+
+    private float GetBounceDamping(string collisionTag) {
+        switch (collisionTag) {
+            case "wall":
+                return 0.92f;
+
+            case "slide":
+                return 0.88f;
+
+            case "Ground":
+                return 0f;
+
+            default:
+                return 0.8f;
+        }
+    }
+
+    private bool IsPegLikeCollision(string collisionTag) {
+        switch (collisionTag) {
+            case "Peg":
+            case "MultiHitPeg":
+            case "TwoHitPeg":
+            case "Pyramid":
+            case "PyramidPeg":
+            case "AmmoPlus":
+            case "AmmoMinus":
+            case "x2":
+            case "BlackHole":
+            case "ArrowLeft":
+            case "ArrowRight":
+            case "ArrowUpLeft":
+            case "ArrowUpRight":
+            case "Nuke":
+                return true;
+
+            default:
+                return false;
+        }
     }
 
     private void HitNormalPeg(GameObject peg) {

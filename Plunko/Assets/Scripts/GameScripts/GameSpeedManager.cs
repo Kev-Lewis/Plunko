@@ -19,6 +19,8 @@ public class GameSpeedManager : MonoBehaviour
 
     private PlaySpeed currentSpeed = PlaySpeed.Normal;
     private bool shotSpeedActive;
+    private bool gameplayPaused;
+    private bool shotSpeedWasActiveBeforePause;
 
     private float baseFixedDeltaTime;
     private float baseMaximumDeltaTime;
@@ -44,6 +46,7 @@ public class GameSpeedManager : MonoBehaviour
     private void OnDestroy() {
         if (Instance == this) {
             SceneManager.sceneLoaded -= OnSceneLoaded;
+            gameplayPaused = false;
             ResetToNormalSpeed();
             Instance = null;
         }
@@ -51,6 +54,8 @@ public class GameSpeedManager : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
         // Menus, tutorials, loading screens, etc. should always run at normal speed.
+        gameplayPaused = false;
+        shotSpeedWasActiveBeforePause = false;
         ResetToNormalSpeed();
     }
 
@@ -69,6 +74,18 @@ public class GameSpeedManager : MonoBehaviour
 
     public static void EndShotSpeed() {
         GetOrCreate().ResetToNormalSpeed();
+    }
+
+    public static void PauseGameplay() {
+        GetOrCreate().PauseGameplayInternal();
+    }
+
+    public static void ResumeGameplay() {
+        GetOrCreate().ResumeGameplayInternal();
+    }
+
+    public static bool IsGameplayPaused() {
+        return Instance != null && Instance.gameplayPaused;
     }
 
     public static int GetSavedSpeedIndex() {
@@ -139,6 +156,15 @@ public class GameSpeedManager : MonoBehaviour
 
         shotSpeedActive = true;
 
+        // If the options menu pauses gameplay during a shot, remember that shot speed is active
+        // but do not unpause until ResumeGameplay() is called.
+        if (gameplayPaused) {
+            Time.timeScale = 0f;
+            Time.fixedDeltaTime = baseFixedDeltaTime;
+            Time.maximumDeltaTime = baseMaximumDeltaTime;
+            return;
+        }
+
         float multiplier = GetCurrentMultiplier();
 
         Time.timeScale = multiplier;
@@ -149,8 +175,51 @@ public class GameSpeedManager : MonoBehaviour
     private void ResetToNormalSpeed() {
         shotSpeedActive = false;
 
+        // Do not accidentally unpause from a speed reset while the options menu is open.
+        if (gameplayPaused) {
+            Time.timeScale = 0f;
+            Time.fixedDeltaTime = baseFixedDeltaTime;
+            Time.maximumDeltaTime = baseMaximumDeltaTime;
+            return;
+        }
+
         Time.timeScale = 1f;
         Time.fixedDeltaTime = baseFixedDeltaTime;
         Time.maximumDeltaTime = baseMaximumDeltaTime;
+    }
+
+    private void PauseGameplayInternal() {
+        // Only the actual gameplay scene should pause. Menu settings should stay normal.
+        if (SceneManager.GetActiveScene().name != "infiniteLevel") {
+            return;
+        }
+
+        if (gameplayPaused) {
+            return;
+        }
+
+        shotSpeedWasActiveBeforePause = shotSpeedActive;
+        gameplayPaused = true;
+
+        Time.timeScale = 0f;
+        Time.fixedDeltaTime = baseFixedDeltaTime;
+        Time.maximumDeltaTime = baseMaximumDeltaTime;
+    }
+
+    private void ResumeGameplayInternal() {
+        if (!gameplayPaused) {
+            return;
+        }
+
+        gameplayPaused = false;
+
+        if (SceneManager.GetActiveScene().name == "infiniteLevel" && shotSpeedWasActiveBeforePause) {
+            ApplyShotSpeed();
+        }
+        else {
+            ResetToNormalSpeed();
+        }
+
+        shotSpeedWasActiveBeforePause = false;
     }
 }

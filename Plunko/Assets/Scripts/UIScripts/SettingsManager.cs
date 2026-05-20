@@ -86,7 +86,7 @@ public class SettingsManager : MonoBehaviour
     }
 
     private IEnumerator readyToPlay() {
-        yield return new WaitForSeconds(0.5f);
+        yield return new WaitForSecondsRealtime(0.5f);
 
         tutorialOpen = false;
         SetPanelActive(CloseSettingsButton, true);
@@ -104,6 +104,7 @@ public class SettingsManager : MonoBehaviour
         UpdateAudioLevels();
         PlaySelectSound();
         SetPanelActive(SettingsCanvas, settingsOpen);
+        ApplyGameplayPauseState(settingsOpen);
     }
 
     public bool getSettingsOpen() {
@@ -116,6 +117,7 @@ public class SettingsManager : MonoBehaviour
         UpdateAudioLevels();
         PlaySelectSound();
         SetPanelActive(SettingsCanvas, true);
+        ApplyGameplayPauseState(true);
     }
 
     public void closeSettings() {
@@ -124,6 +126,7 @@ public class SettingsManager : MonoBehaviour
         UpdateAudioLevels();
         PlaySelectSound();
         SetPanelActive(SettingsCanvas, false);
+        ApplyGameplayPauseState(false);
     }
 
     public void Volume_Slider(float volume) {
@@ -202,6 +205,7 @@ public class SettingsManager : MonoBehaviour
         UpdateAudioLevels();
 
         if (SceneManager.GetActiveScene().name == "infiniteLevel") {
+            GameSpeedManager.ResumeGameplay();
             GameSpeedManager.EndShotSpeed();
             SaveRunBeforeLeavingLevel();
         }
@@ -222,6 +226,19 @@ public class SettingsManager : MonoBehaviour
 
         if (!Shooter.shooting) {
             RunManager.Instance.SaveRunCheckpoint();
+        }
+    }
+
+    private void ApplyGameplayPauseState(bool shouldPause) {
+        if (SceneManager.GetActiveScene().name != "infiniteLevel") {
+            return;
+        }
+
+        if (shouldPause) {
+            GameSpeedManager.PauseGameplay();
+        }
+        else {
+            GameSpeedManager.ResumeGameplay();
         }
     }
 
@@ -256,7 +273,7 @@ public class SettingsManager : MonoBehaviour
     }
 
     private IEnumerator changeScene(string scene, float time) {
-        yield return new WaitForSeconds(time);
+        yield return new WaitForSecondsRealtime(time);
         SceneManager.LoadScene(scene);
     }
 }

@@ -1086,7 +1086,11 @@ public class Shooter : MonoBehaviour
     }
 
     public void setSettingsToClose() {
-        if (settingsOpen) {
+        // This method is still safe to keep on the Options button.
+        // SettingsManager handles the actual pause/resume; Shooter only blocks input and hides aiming UI.
+        bool settingsManagerOpen = settingsManager != null && settingsManager.getSettingsOpen();
+
+        if (settingsOpen && !settingsManagerOpen) {
             StartCoroutine(readyToPlay());
             return;
         }
@@ -1121,7 +1125,7 @@ public class Shooter : MonoBehaviour
     }
 
     private IEnumerator readyToPlay() {
-        yield return new WaitForSeconds(0.5f);
+        yield return new WaitForSecondsRealtime(0.5f);
         settingsOpen = false;
 
         if (settings_button != null) {

@@ -8866,7 +8866,7 @@ MonoBehaviour:
   defaultAimAngle: -90
   minAimAngle: -175
   maxAimAngle: -5
-  aimTurnSpeed: 60
+  aimTurnSpeed: 70
   pointPrefab: {fileID: 4139577049771257277, guid: b9aae2a2478283f4f8fa1c0800d4ae5c, type: 3}
   numberOfPoints: 60
   usePredictiveCollisionTrace: 1

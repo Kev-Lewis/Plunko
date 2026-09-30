@@ -4,1097 +4,1354 @@ using UnityEngine;
 
 public class Spawning : MonoBehaviour
 {
-    [SerializeField] private GameObject normalPeg, multiHitPeg, pyramidPeg, blackholePeg, ammoPlusPeg, ammoMinusPeg, sliderPeg, sliderPegShort;
-    [SerializeField] private GameObject paddle1, paddle2, paddle3, paddle4, slideCornerLeft, slideCornerRight, x2Peg;
-    [SerializeField] private GameObject arrowPegLeft, arrowPegUpLeft, arrowPegRight, arrowPegUpRight, twoHitPeg;
-    [SerializeField] private int minRange, maxRange;
-    [SerializeField] private Camera cam;
-    private Vector3 cameraViewPort;
-    private Shooter shoot;
+    public enum BoardPatterns 
+    {
+        HardSlide,
+        DownwardsArc,
+        UpwardsArc,
+        Wave,
+        Bucket,
+        Spiral,
+        Triangle,
+        DenseField,
+        WallBounce,
+        Diamond,
+    }
 
-    public int spawnCount;   //eventually change to not be static
-    private int xGridSize = 8;
-    private int yGridSize = 7;
+    private enum SpawnSide { Left = -1, Right = 1 }
+    private enum SlideMode { Both, LeftOnly, RightOnly, None }
+
+    [Header("Seed Settings")]
+    [SerializeField] private bool useSeededGeneration = true;
+
+    // Seed Format: PL + 8 hexadecimal characters.
+    [SerializeField] private string seed = "PL00001A3F";
+
+    [Header("Peg Prefabs")]
+    [SerializeField] private GameObject normalPeg;
+    [SerializeField] private GameObject multiHitPeg;
+    [SerializeField] private GameObject pyramidPeg;
+    [SerializeField] private GameObject blackholePeg;
+    [SerializeField] private GameObject ammoPlusPeg;
+    [SerializeField] private GameObject ammoMinusPeg;
+    [SerializeField] private GameObject x2Peg;
+    [SerializeField] private GameObject arrowPegLeft;
+    [SerializeField] private GameObject arrowPegUpLeft;
+    [SerializeField] private GameObject arrowPegRight;
+    [SerializeField] private GameObject arrowPegUpRight;
+    [SerializeField] private GameObject twoHitPeg;
+
+    [Header("Obstacle Prefabs")]
+    [SerializeField] private GameObject sliderPeg;
+    [SerializeField] private GameObject sliderPegShort;
+    [SerializeField] private GameObject slideCornerLeft;
+    [SerializeField] private GameObject slideCornerRight;
+    [SerializeField] private GameObject paddle1;
+    [SerializeField] private GameObject paddle2;
+    [SerializeField] private GameObject paddle3;
+    [SerializeField] private GameObject paddle4;
+
+    [Header("Generation Settings")]
+    [SerializeField] private int minRange = 12;
+    [SerializeField] private int maxRange = 24;
+    [SerializeField] private List<BoardPatterns> enabledPatterns = new List<BoardPatterns>();
+
+    [Header("Grid Settings")]
+    [SerializeField] private int xGridSize = 8;
+    [SerializeField] private int yGridSize = 7;
+    [SerializeField] private float zeroX = -7.5f;
+    [SerializeField] private float zeroY = 2f;
+
+    [System.Serializable]
+    public class BoardPrefabEntry
+    {
+        public string saveId;
+        public GameObject prefab;
+    }
+
+    [Header("Save/Load Prefab Mapping")]
+    [SerializeField] private List<BoardPrefabEntry> boardPrefabEntries = new List<BoardPrefabEntry>();
+
+    public int spawnCount;
+
     private bool[,] grid;
-    private float zeroX = -7.5f;
-    private float zeroY = 2f;
     private int[] slidePos;
-    private GameObject[] usablePegs;
-    private int amt_of_pegs = 8;
-    private int which_side_to_spawn;
-    private int levels_cleared;
+    private Shooter shoot;
+    private int levelsCleared;
+    private SpawnSide nextNormalSide = SpawnSide.Left;
+    private System.Random seededRandom;
+    private bool initialized;
 
-    // Start is called before the first frame update
-    void Start()
-    {   
-        cameraViewPort = cam.ViewportToWorldPoint(new Vector3(1,1,cam.nearClipPlane));
-        //print(cameraViewPort);
-        grid = new bool[xGridSize+1, yGridSize];
-        slidePos = new int[xGridSize+1];
-        shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
-        // for spawning
-        usablePegs = new GameObject[amt_of_pegs];
+    private BoardPatterns currentBoardPattern;
+
+    private readonly List<GameObject> unlockedPegs = new List<GameObject>();
+    private readonly List<GameObject> unlockPool = new List<GameObject>();
+
+    // special peg weighting
+    private readonly Dictionary<string, int> specialPegWeightBonuses = new Dictionary<string, int>();
+
+    private static readonly BoardPatterns[] defaultPatterns =
+    {
+        BoardPatterns.HardSlide,
+        BoardPatterns.DownwardsArc,
+        BoardPatterns.UpwardsArc,
+        BoardPatterns.Wave,
+        BoardPatterns.Bucket,
+        BoardPatterns.Spiral,
+        BoardPatterns.Triangle,
+        BoardPatterns.DenseField,
+        BoardPatterns.WallBounce,
+        BoardPatterns.Diamond,
+    };
+
+    private void Start() {
+        InitializeSpawner();
+
+        // If RunManager exists, it controls whether we load a saved board or start a new run.
+        // This prevents a default board from spawning before the saved board is restored.
+        if (RunManager.Instance == null) {
+            StartNewSeededRun(seed, true);
+        }
+    }
+
+    private void InitializeSpawner() {
+        if (initialized) {
+            return;
+        }
+
+        grid = new bool[xGridSize, yGridSize];
+        slidePos = new int[xGridSize];
+
+        GameObject shooterObject = GameObject.Find("Shooter");
+        if (shooterObject != null) {
+            shoot = shooterObject.GetComponent<Shooter>();
+        }
+
+        initialized = true;
+    }
+
+    public void SpawnObjects() {
+        InitializeSpawner();
+
+        ResetBoardState();
+        SpawnRandomPaddles();
+        currentBoardPattern = PickRandomPattern();
+        SpawnBoardPattern(currentBoardPattern);
+    }
+
+    public void StartNewSeededRun(string newSeed, bool spawnBoard = true) {
+        InitializeSpawner();
+
+        seed = NormalizeSeed(newSeed);
+        ResetRunState();
+
+        if (spawnBoard) {
+            SpawnObjects();
+        }
+    }
+
+    private void InitializeRandom() {
+        if (useSeededGeneration) {
+            seededRandom = new System.Random(SeedStringToInt(seed));
+        }
+        else {
+            seededRandom = null;
+        }
+    }
+
+    private string NormalizeSeed(string denormalized_seed) {
+        if (string.IsNullOrWhiteSpace(denormalized_seed)) {
+            return "PL00000000";
+        }
+
+        denormalized_seed = denormalized_seed.Trim().ToUpper();
+
+        if (!denormalized_seed.StartsWith("PL")) {
+            denormalized_seed = "PL" + denormalized_seed;
+        }
+
+        string hexPart = denormalized_seed.Substring(2);
+
+        if (hexPart.Length > 8) {
+            hexPart = hexPart.Substring(0, 8);
+        }
+
+        while (hexPart.Length < 8) {
+            hexPart = "0" + hexPart;
+        }
+
+        for (int i = 0; i < hexPart.Length; i++) {
+            bool isDigit = hexPart[i] >= '0' && hexPart[i] <= '9';
+            bool isHexLetter = hexPart[i] >= 'A' && hexPart[i] <= 'F';
+
+            if (!isDigit && !isHexLetter) {
+                return "PL00000000";
+            }
+        }
+
+        return "PL" + hexPart;
+    }
+
+    private int SeedStringToInt(string seed) {
+        string normalizedSeed = NormalizeSeed(seed);
+        string hexPart = normalizedSeed.Substring(2, 8);
+
+        try {
+            uint unsignedSeed = System.Convert.ToUInt32(hexPart, 16);
+            return unchecked((int)unsignedSeed);
+        }
+        catch {
+            return 0;
+        }
+    }
+
+    private int Range(int minInclusive, int maxExclusive) {
+        if (maxExclusive <= minInclusive) {
+            return minInclusive;
+        }
+
+        if (useSeededGeneration && seededRandom != null) {
+            return seededRandom.Next(minInclusive, maxExclusive);
+        }
+
+        return UnityEngine.Random.Range(minInclusive, maxExclusive);
+    }
+
+    private float Range(float minInclusive, float maxInclusive) {
+        if (maxInclusive <= minInclusive) {
+            return minInclusive;
+        }
+
+        if (useSeededGeneration && seededRandom != null) {
+            return minInclusive + (float)seededRandom.NextDouble() * (maxInclusive - minInclusive);
+        }
+
+        return UnityEngine.Random.Range(minInclusive, maxInclusive);
+    }
+
+    private float Value() {
+        if (useSeededGeneration && seededRandom != null) {
+            return (float)seededRandom.NextDouble();
+        }
+
+        return UnityEngine.Random.value;
+    }
+
+    private bool Chance(float probability) {
+        return Value() < probability;
+    }
+
+    private BoardPatterns PickRandomPattern() {
+        if (enabledPatterns != null && enabledPatterns.Count > 0) {
+            return enabledPatterns[Range(0, enabledPatterns.Count)];
+        }
+
+        return defaultPatterns[Range(0, defaultPatterns.Length)];
+    }
+
+    private void SpawnBoardPattern(BoardPatterns pattern) {
+        switch (pattern) {
+            case BoardPatterns.HardSlide:
+                SpawnHard();
+                break;
+            case BoardPatterns.DownwardsArc:
+                SpawnDownwardsArc();
+                break;
+            case BoardPatterns.UpwardsArc:
+                SpawnUpwardsArc();
+                break;
+            case BoardPatterns.Wave:
+                SpawnWave();
+                break;
+            case BoardPatterns.Bucket:
+                SpawnBucket();
+                break;
+            case BoardPatterns.Spiral:
+                SpawnSpiral();
+                break;
+            case BoardPatterns.Triangle:
+                SpawnTriangle();
+                break;
+            case BoardPatterns.DenseField:
+                SpawnDenseField();
+                break;
+            case BoardPatterns.WallBounce:
+                SpawnWallBounce();
+                break;
+            case BoardPatterns.Diamond:
+                SpawnDiamond();
+                break;
+        }
+    }
+
+    private void ResetRunState() {
+        InitializeRandom();
+        levelsCleared = 0;
+        nextNormalSide = SpawnSide.Left;
+        specialPegWeightBonuses.Clear();
         resetUnlockedPegs();
-        which_side_to_spawn = 1;
-        levels_cleared = 0;
-        resetList();
-        SpawnObjects();
     }
 
-    public int spawnSlide()
-    {
-        int initialPos = Random.Range(0, 2);
-        int howToSpawn = Random.Range(0, 14);
+    private void ResetBoardState() {
+        InitializeSpawner();
+
+        if (grid == null || grid.GetLength(0) != xGridSize || grid.GetLength(1) != yGridSize) {
+            grid = new bool[xGridSize, yGridSize];
+        }
+
+        if (slidePos == null || slidePos.Length != xGridSize) {
+            slidePos = new int[xGridSize];
+        }
+
+        for (int x = 0; x < xGridSize; x++) {
+            for (int y = 0; y < yGridSize; y++) {
+                grid[x, y] = false;
+            }
+
+            slidePos[x] = yGridSize + 1;
+        }
+
+        spawnCount = 0;
+        SetPaddles(false, false, false, false);
+    }
+
+    public void resetList() {
+        ResetBoardState();
+    }
+
+    public void resetUnlockedPegs() {
+        unlockedPegs.Clear();
+        AddUnlockedPeg(ammoPlusPeg);
+        AddUnlockedPeg(ammoMinusPeg);
+    }
+
+    public void unlockNewPeg() {
+        BuildUnlockPool();
+
+        if (unlockPool.Count == 0) {
+            return;
+        }
+
+        GameObject chosenPeg = unlockPool[Range(0, unlockPool.Count)];
+        AddUnlockedPeg(chosenPeg);
+
+        if (shoot != null) {
+            shoot.startUnlockedPopUp(chosenPeg);
+        }
+    }
+
+    private void BuildUnlockPool() {
+        unlockPool.Clear();
+        AddToUnlockPool(x2Peg);
+        AddToUnlockPool(multiHitPeg);
+        AddToUnlockPool(blackholePeg);
+        AddToUnlockPool(pyramidPeg);
+        AddToUnlockPool(arrowPegLeft);
+        AddToUnlockPool(twoHitPeg);
+    }
+
+    private void AddToUnlockPool(GameObject peg) {
+        if (peg != null && !unlockedPegs.Contains(peg) && !unlockPool.Contains(peg)) {
+            unlockPool.Add(peg);
+        }
+    }
+
+    private void AddUnlockedPeg(GameObject peg) {
+        if (peg != null && !unlockedPegs.Contains(peg)) {
+            unlockedPegs.Add(peg);
+        }
+    }
+
+    private void SpawnRandomPaddles() {
+        int roll = Range(0, 100);
+
+        if (roll < 15) {
+            SetPaddles(true, false, false, false);
+        }
+        else if (roll < 30) {
+            SetPaddles(false, true, false, false);
+        }
+        else if (roll < 65) {
+            SetPaddles(false, false, true, true);
+        }
+        else {
+            SetPaddles(false, false, false, false);
+        }
+    }
+
+    private void SetPaddles(bool p1, bool p2, bool p3, bool p4) {
+        if (paddle1 != null) paddle1.SetActive(p1);
+        if (paddle2 != null) paddle2.SetActive(p2);
+        if (paddle3 != null) paddle3.SetActive(p3);
+        if (paddle4 != null) paddle4.SetActive(p4);
+    }
+
+    public void SpawnHard() {
+        SpawnSlideRamp();
+
+        int targetPegCount = Range(minRange, maxRange + 1);
+        int spawned = 0;
+        int attempts = 0;
+        int maxAttempts = targetPegCount * 30;
+
+        while (spawned < targetPegCount && attempts < maxAttempts) {
+            attempts++;
+
+            int x = Range(0, xGridSize);
+            int y = Range(0, yGridSize - 1);
+
+            if (y < slidePos[x] && TrySpawnCell(x, y)) {
+                spawned += 2;
+            }
+        }
+    }
+
+    private int SpawnSlideRamp() {
+        int y = Range(0, 2);
         bool cornerSpawned = false;
-        for (int i = 0; i < xGridSize; i++)
-        {
-            if (howToSpawn < 15)
-            {
-                if (initialPos <= yGridSize - 3)
-                {
-                    slidePos[i] = initialPos;
-                    spawnSliderPegs(i, initialPos);
-                    initialPos++;
-                }
-                else if (!cornerSpawned)
-                {
-                    slidePos[i] = initialPos;
-                    spawnSliderPegsCorner(i, initialPos);
-                    cornerSpawned = true;
-                }
-                else
-                {
-                    slidePos[i] = initialPos;
-                    spawnSliderPegs(i, initialPos);
-                }
+
+        for (int x = 0; x < xGridSize; x++) {
+            slidePos[x] = y;
+
+            if (y <= yGridSize - 3) {
+                SpawnSliderPair(x, y);
+                y++;
             }
-            else if (howToSpawn <= 45)
-            {
-                if (initialPos <= yGridSize - 3)
-                {
-                    slidePos[i] = initialPos;
-                    spawnLeftSliderPegs(i, initialPos);
-                    initialPos++;
-                }
-                else if (!cornerSpawned)
-                {
-                    slidePos[i] = initialPos;
-                    spawnLeftSliderPegsCorner(i, initialPos);
-                    cornerSpawned = true;
-                }
-                else
-                {
-                    slidePos[i] = initialPos;
-                    spawnLeftSliderPegs(i, initialPos);
-                }
+            else if (!cornerSpawned) {
+                SpawnSlideCorner(SpawnSide.Left, x, y);
+                SpawnSlideCorner(SpawnSide.Right, x, y);
+                cornerSpawned = true;
             }
-            else if (howToSpawn <= 75)
-            {
-                if (initialPos <= yGridSize - 3)
-                {
-                    slidePos[i] = initialPos;
-                    spawnRightSliderPegs(i, initialPos);
-                    initialPos++;
-                }
-                else if (!cornerSpawned)
-                {
-                    slidePos[i] = initialPos;
-                    spawnRightSliderPegsCorner(i, initialPos);
-                    cornerSpawned = true;
-                }
-                else
-                {
-                    slidePos[i] = initialPos;
-                    spawnRightSliderPegs(i, initialPos);
-                }
-            }
-            else
-            {
-                return initialPos;
+            else {
+                SpawnSliderPair(x, y);
             }
         }
-        return initialPos;
+
+        return y;
     }
 
-    public void SpawnHard()
-    {
-        int range = spawnSlide();
-        int count = Random.Range(minRange, maxRange);
-        int amtSpawned = 0;
+    public void SpawnDownwardsArc() {
+        SpawnArc(true);
+    }
 
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
-        }
+    public void SpawnUpwardsArc() {
+        SpawnArc(false);
+    }
 
-        while (amtSpawned < count)
-        {
-            int xPos = Random.Range(0, xGridSize);
-            int yPos = Random.Range(0, yGridSize - 1);
-            if (grid[xPos, yPos] == false && yPos < slidePos[xPos])
-            {
-                grid[xPos, yPos] = true;
-                spawnPegs(xPos, yPos);
-                amtSpawned += 2;
+    private void SpawnArc(bool downward) {
+        int startX = Range(0, 2);
+        int y = downward ? Range(0, 2) : Range(4, 6);
+        bool staggered = Chance(0.5f);
+        int staggerCounter = 0;
+
+        for (int x = startX; x < xGridSize; x++) {
+            SpawnBand(x, y, 3, downward ? 1 : -1);
+
+            if (!staggered || staggerCounter == 1) {
+                if (downward && y < yGridSize - 4) y++;
+                if (!downward && y > 2) y--;
+                staggerCounter = 0;
+            }
+            else {
+                staggerCounter++;
             }
         }
     }
 
-    public void SpawnObjects()
-    {
-        int which_style = Random.Range(0, 200);
-        //int which_style = 160;
-        if (which_style <= 50)
-        {
-            SpawnHard();
-        }
-        else if (which_style <= 75)
-        {
-            SpawnDownwardsArc();
-        }
-        else if (which_style <= 100)
-        {
-            SpawnWave();
-        }
-        else if (which_style <= 125)
-        {
-            SpawnBucket();
-        }
-        else if (which_style <= 150)
-        {
-            SpawnSpiral();
-        }
-        else if (which_style <= 175)
-        {
-            SpawnTriangle();
-        }
-        else
-        {
-            SpawnUpwardsArc();
-        }  
-    }
+    public void SpawnWave() {
+        int centerY = Range(2, yGridSize - 2);
+        int direction = Chance(0.5f) ? -1 : 1;
 
-    public void SpawnDownwardsArc()
-    {
-        // paddles
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
-        }
+        for (int x = 0; x < xGridSize; x++) {
+            SpawnBand(x, centerY - 1, 3, 1);
 
-        int startingX = Random.Range(0, 2);
-        int startingY = Random.Range(0, 1);
-        int which_style = Random.Range(0, 50);
-        if (which_style < 25)
-        {
-            while (startingX < xGridSize)
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < 3)
-                {
-                    spawnPegs(startingX, startingY + amt_spawned);
-                    amt_spawned++;
-                }
-                if (startingY < yGridSize-4)
-                {
-                    startingY++;
-                }
-                startingX++;
-            }
-        }
-        else
-        {
-            int alternate = 0;
-            while (startingX < xGridSize)
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < 3)
-                {
-                    spawnPegs(startingX, startingY + amt_spawned);
-                    amt_spawned++;
-                }
-                if (startingY < yGridSize - 4 && alternate == 1)
-                {
-                    alternate--;
-                    startingY++;
-                }
-                else
-                {
-                    alternate++;
-                }
-                startingX++;
+            centerY += direction;
+
+            if (centerY <= 1 || centerY >= yGridSize - 3) {
+                direction *= -1;
             }
         }
     }
 
-    public void SpawnUpwardsArc()
-    {
-        // paddles
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
-        }
+    public void SpawnTriangle() {
+        int startingX = Range(2, 4);
+        int startingY = 4;
 
-        int startingX = Random.Range(0, 1);
-        int startingY = Random.Range(5, 6);
-        int which_style = Random.Range(0, 50);
-        if (which_style < 25)
-        {
-            while (startingX < xGridSize)
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < 3)
-                {
-                    spawnPegs(startingX, startingY - amt_spawned);
-                    amt_spawned++;
-                }
-                if (startingY > 2)
-                {
-                    startingY--;
-                }
-                startingX++;
-            }
-        }
-        else
-        {
-            int alternate = 0;
-            while (startingX < xGridSize)
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < 3)
-                {
-                    spawnPegs(startingX, startingY - amt_spawned);
-                    amt_spawned++;
-                }
-                if (startingY > 0 && alternate == 1)
-                {
-                    alternate--;
-                    startingY--;
-                }
-                else
-                {
-                    alternate++;
-                }
-                startingX++;
-            }
-        }
-    }
-
-    public void SpawnTriangle()
-    {
-        // paddles
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
-        }
-
-        int startingX = Random.Range(2, 4);
-        int startingY = Random.Range(4, 5);
         int level = 1;
         int prevY = 1;
         int currentY = 1;
-        spawnSliderPegs(startingX - 1, startingY + 1);
-        while (startingX < xGridSize)
-        {
-            int amt_spawned = 0;
-            while (amt_spawned < level)
-            {
-                spawnPegs(startingX, startingY - amt_spawned);
-                amt_spawned++;
+
+        SpawnSliderPair(startingX - 1, startingY + 1);
+
+        while (startingX < xGridSize) {
+            for (int i = 0; i < level; i++) {
+                TrySpawnCell(startingX, startingY - i);
             }
+
             currentY = startingY + level;
-            if (currentY != prevY)
-            {
-                spawnSliderTrianglePegs(startingX - 1, startingY - level);
+
+            if (currentY != prevY) {
+                SpawnTriangleSlider(startingX - 1, startingY - level);
             }
-            spawnSliderPegs(startingX, startingY + 1);
-            if (level <= startingY)
-            {
+
+            SpawnSliderPair(startingX, startingY + 1);
+
+            if (level <= startingY) {
                 level++;
             }
+
             startingX++;
             prevY = currentY;
         }
     }
 
-    public void SpawnBucket()
-    {
-        // paddles
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
+    public void SpawnBucket() {
+        int startingX = 1;
+        int startingY = 0;
+        int initialY = yGridSize - 2;
+
+        int firstTwo = 0;
+        int level = 0;
+
+        for (int i = startingY; i < initialY; i++) {
+            SpawnBucketWall(startingX - 1, startingY + i - 0.5f);
+
+            if (startingY + i < initialY - 2) {
+                SpawnBucketWall(startingX + 2, startingY + i - 0.5f);
+            }
         }
 
-        int startingX = Random.Range(1, 2);
-        int startingY = Random.Range(0, 1);
-        int initialY = yGridSize - 2;
-        int first_two = 0;
-        int level = 0;
-        for (int i = startingY; i < initialY; i++)
-        {
-            spawnSlideBucketPegs(startingX - 1, startingY + i - 0.5f);
-            if (startingY + i < initialY - 2)
-            {
-                spawnSlideBucketPegs(startingX + 2, startingY + i - 0.5f);
-            }
-        }
-        while (startingX < xGridSize)
-        {
-            int amt_spawned = 0;
-            if (first_two < 2)
-            {
+        while (startingX < xGridSize) {
+            int amountSpawned = 0;
+
+            if (firstTwo < 2) {
                 level = yGridSize - 2;
             }
-            else
-            {
+            else {
                 startingY = yGridSize - 3;
                 level = 2;
             }
-            while (amt_spawned < level)
-            {
-                if (first_two < 2)
-                {
-                    spawnPegs(startingX, startingY + amt_spawned);
-                    amt_spawned++;
+
+            while (amountSpawned < level) {
+                if (firstTwo < 2) {
+                    TrySpawnCell(startingX, startingY + amountSpawned);
                 }
-                else
-                {
-                    spawnPegs(startingX, startingY - amt_spawned);
-                    amt_spawned++;
+                else {
+                    TrySpawnCell(startingX, startingY - amountSpawned);
                 }
+
+                amountSpawned++;
             }
-            spawnSliderPegs(startingX, initialY);
-            if (first_two > 2)
-            {
-                spawnInsideSlideBucketPegs(startingX, initialY - 3.25f);
+
+            SpawnSliderPair(startingX, initialY);
+
+            if (firstTwo > 2) {
+                SpawnInsideBucketRail(startingX, initialY - 3.25f);
             }
-            first_two++;
+
+            firstTwo++;
             startingX++;
         }
     }
 
-    public void SpawnSpiral()
-    {
-        // paddles
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
-        }
-
-        int startingX = Random.Range(0, 1);
+    public void SpawnSpiral() {
         int temp = 0;
-        while (startingX < xGridSize)
-        {
-            if (startingX < 3)
-            {
-                spawnPegs(startingX, startingX);
-                spawnPegs(startingX, yGridSize - 2 - startingX);
+
+        for (int x = 0; x < xGridSize; x++) {
+            if (x <= 3) {
+                TrySpawnCell(x, x);
+                TrySpawnCell(x, yGridSize - 2 - x);
             }
-            else if (startingX == 3)
-            {
-                spawnPegs(startingX, startingX);
-                spawnPegs(startingX, yGridSize - 2 - startingX);
-            }
-            else if (startingX == 4 && startingX < yGridSize-1)
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < startingX)
-                {
-                    spawnPegs(startingX, startingX-amt_spawned);
-                    amt_spawned++;
+            else if (x == 4 && x < yGridSize - 1) {
+                for (int i = 0; i < x; i++) {
+                    TrySpawnCell(x, x - i);
                 }
             }
-            else if (startingX == 5 && startingX < yGridSize - 1)
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < startingX+1)
-                {
-                    spawnPegs(startingX, startingX - amt_spawned);
-                    amt_spawned++;
+            else if (x == 5 && x < yGridSize - 1) {
+                for (int i = 0; i < x + 1; i++) {
+                    TrySpawnCell(x, x - i);
                 }
             }
-            else
-            {
-                int amt_spawned = 0;
-                while (amt_spawned < yGridSize-2 - temp)
-                {
-                    spawnPegs(startingX, yGridSize-3 - temp - amt_spawned);
-                    amt_spawned++;
+            else {
+                int amount = yGridSize - 2 - temp;
+
+                for (int i = 0; i < amount; i++) {
+                    TrySpawnCell(x, yGridSize - 3 - temp - i);
                 }
+
                 temp++;
             }
-            startingX++;
         }
     }
 
-    public void SpawnWave()
-    {
-        // paddles
-        int whichPaddles = Random.Range(0, 100);
-        if (whichPaddles <= 15)
-        {
-            paddle1.SetActive(true);
-        }
-        else if (whichPaddles <= 30)
-        {
-            paddle2.SetActive(true);
-        }
-        else if (whichPaddles <= 65)
-        {
-            paddle3.SetActive(true);
-            paddle4.SetActive(true);
+    private GameObject PickDenseFieldPeg() {
+        int specialChance = Mathf.Clamp(20 + levelsCleared * 2, 20, 50);
+        bool useNormalPeg = Range(0, 100) >= specialChance || unlockedPegs.Count == 0;
+
+        if (useNormalPeg) {
+            return normalPeg;
         }
 
-        int startingX = Random.Range(0, 1);
-        int startingY = Random.Range(2, 3);
-        int direction = Random.Range(0, 50);
-        if (direction < 25)
-        {
-            direction = -1;
+        GameObject specialPeg = PickWeightedUnlockedPeg();
+
+        if (specialPeg == null) {
+            return normalPeg;
         }
-        else
-        {
-            direction = 1;
+
+        if (specialPeg == arrowPegLeft) {
+            GameObject[] arrows = { arrowPegLeft, arrowPegUpLeft, arrowPegRight, arrowPegUpRight };
+            return arrows[Range(0, arrows.Length)];
         }
-        while (startingX < xGridSize)
-        {
-            int amt_spawned = 0;
-            while (amt_spawned < 3)
-            {
-                spawnPegs(startingX, startingY - 1 + amt_spawned);
-                amt_spawned++;
-            }
-            if (direction == 1 && startingY <= 1)
-            {
-                direction = -1;
-            }
-            else if (direction == -1 && startingY >= yGridSize - 3)
-            {
-                direction = 1;
-            }
-            if (direction == 1)
-            {
-                startingY--;
-            }
-            else if (direction == -1)
-            {
-                startingY++;
-            }
-            startingX++;
-        }
+
+        return specialPeg;
     }
 
-    public void resetList()
-    {
-        for (int i = 0; i < xGridSize+1; i++)
-        {
-            for (int j = 0; j < yGridSize; j++)
-            {
-                grid[i, j] = false;
-            }
-            slidePos[i] = xGridSize + 1;
+    private void SpawnDenseCenterPeg(float worldX, float y) {
+        GameObject prefab = PickDenseFieldPeg();
+
+        if (prefab == null) {
+            return;
         }
-        spawnCount = 0;
-        levels_cleared = 0;
-        paddle1.SetActive(false);
-        paddle2.SetActive(false);
-        paddle3.SetActive(false);
-        paddle4.SetActive(false);
+
+        float worldY = zeroY - y;
+
+        Instantiate(
+            prefab,
+            new Vector3(worldX, worldY, 0f),
+            prefab.transform.rotation
+        );
+
+        spawnCount += GetSpawnCountValueForTag(prefab.tag);
     }
 
-    public void resetUnlockedPegs()
-    {
-        for (int i = 0; i < usablePegs.Length; i++)
-        {
-            if (i == 0)
-            {
-                usablePegs[i] = ammoPlusPeg;
+    public void SpawnDenseField() {
+        float centerX = 0f;
+        float centerY = 2.5f;
+
+        float xSpacing = 0.75f;
+        float ySpacing = 0.55f;
+
+        int rows = 6;
+        int maxCols = 15;
+
+        for (int row = 0; row < rows; row++) {
+            int pegsInRow;
+
+            if (row == 0 || row == rows - 1) {
+                pegsInRow = 9;
             }
-            else if (i == 1)
-            {
-                usablePegs[i] = ammoMinusPeg;
+            else if (row == 1 || row == rows - 2) {
+                pegsInRow = 13;
             }
-            else
-            {
-                usablePegs[i] = null;
+            else {
+                pegsInRow = maxCols;
+            }
+
+            float rowOffset = row % 2 == 0 ? 0f : xSpacing * 0.5f;
+            float startX = centerX - ((pegsInRow - 1) * xSpacing * 0.5f);
+
+            float y = centerY - ((rows - 1) * ySpacing * 0.5f) + row * ySpacing;
+
+            for (int i = 0; i < pegsInRow; i++) {
+                float x = startX + i * xSpacing + rowOffset;
+                SpawnDenseCenterPeg(x, y);
             }
         }
     }
 
-    public void unlockNewPeg()
-    {
-        int how_many_unlocked = 0;
-        for (int i = 0; i < usablePegs.Length; i++)
-        {
-            if (usablePegs[i] != null)
-            {
-                how_many_unlocked++;
-            }
+    public void SpawnWallBounce() {
+        for (int x = 0; x < xGridSize; x += 2) {
+            SpawnSliderPair(x, Range(1, yGridSize - 2));
+            TrySpawnCell(x, Range(0, yGridSize - 1));
         }
-        if (how_many_unlocked < amt_of_pegs)
-        {
-            bool new_inserted = false;
-            while (!new_inserted)
-            {
-                int which = Random.Range(0, 25 * amt_of_pegs);
-                if (which <= 25)
-                {
-                    // x2
-                    bool currently_inserted = false;
-                    for (int i = 0; i < usablePegs.Length; i++)
-                    {
-                        if (usablePegs[i] != null)
-                        {
-                            if (usablePegs[i].name == "x2Peg")
-                            {
-                                currently_inserted = true;
-                            }
+
+        for (int x = 1; x < xGridSize; x += 2) {
+            TrySpawnCell(x, 1);
+            TrySpawnCell(x, yGridSize - 3);
+        }
+    }
+
+    public void SpawnDiamond() {
+        int centerX = xGridSize / 2;
+        int centerY = yGridSize / 2;
+        int radius = 3;
+
+        bool centerAlwaysSpecial = true;
+
+        for (int x = 0; x < xGridSize; x++) {
+            for (int y = 0; y < yGridSize; y++) {
+                int distance = Mathf.Abs(x - centerX) + Mathf.Abs(y - centerY);
+
+                if (distance <= radius) {
+                    if (distance == 0 && centerAlwaysSpecial && unlockedPegs.Count > 0) {
+                        GameObject specialPeg = PickWeightedUnlockedPeg();
+
+                        if (specialPeg == null) {
+                            TrySpawnCell(x, y);
+                            continue;
                         }
-                    }
-                    if (!currently_inserted)
-                    {
-                        usablePegs[how_many_unlocked] = x2Peg;
-                        shoot.startUnlockedPopUp(x2Peg);
-                        new_inserted = true;
+
+                        SpawnSingleSpecial(specialPeg, x, y, SpawnSide.Left);
+                        SpawnSinglePeg(normalPeg, x, y, SpawnSide.Right, Quaternion.identity);
+
+                        spawnCount += 1 + ExtraSpawnCountForSpecial(specialPeg);
+                        continue;
                     }
 
-                }
-                else if (which <= 50)
-                {
-                    // multiHit
-                    bool currently_inserted = false;
-                    for (int i = 0; i < usablePegs.Length; i++)
-                    {
-                        if (usablePegs[i] != null)
-                        {
-                            if (usablePegs[i].name == "multiHitPeg")
-                            {
-                                currently_inserted = true;
-                            }
-                        }
-                    }
-                    if (!currently_inserted)
-                    {
-                        usablePegs[how_many_unlocked] = multiHitPeg;
-                        shoot.startUnlockedPopUp(multiHitPeg);
-                        new_inserted = true;
-                    }
-                }
-                else if (which <= 75)
-                {
-                    // blackHole
-                    bool currently_inserted = false;
-                    for (int i = 0; i < usablePegs.Length; i++)
-                    {
-                        if (usablePegs[i] != null)
-                        {
-                            if (usablePegs[i].name == "blackholePeg")
-                            {
-                                currently_inserted = true;
-                            }
-                        }
-                    }
-                    if (!currently_inserted)
-                    {
-                        usablePegs[how_many_unlocked] = blackholePeg;
-                        shoot.startUnlockedPopUp(blackholePeg);
-                        new_inserted = true;
-                    }
-                }
-                else if (which <= 100)
-                {
-                    // pyramid
-                    bool currently_inserted = false;
-                    for (int i = 0; i < usablePegs.Length; i++)
-                    {
-                        if (usablePegs[i] != null)
-                        {
-                            if (usablePegs[i].name == "pyramidPeg")
-                            {
-                                currently_inserted = true;
-                            }
-                        }
-                    }
-                    if (!currently_inserted)
-                    {
-                        usablePegs[how_many_unlocked] = pyramidPeg;
-                        shoot.startUnlockedPopUp(pyramidPeg);
-                        new_inserted = true;
-                    }
-                }
-                else if (which <= 125)
-                {
-                    // arrow
-                    bool currently_inserted = false;
-                    for (int i = 0; i < usablePegs.Length; i++)
-                    {
-                        if (usablePegs[i] != null)
-                        {
-                            if (usablePegs[i].name == "arrowPegLeft")
-                            {
-                                currently_inserted = true;
-                            }
-                        }
-                    }
-                    if (!currently_inserted)
-                    {
-                        usablePegs[how_many_unlocked] = arrowPegLeft;
-                        shoot.startUnlockedPopUp(arrowPegLeft);
-                        new_inserted = true;
-                    }
-                }
-                else if (which <= 150)
-                {
-                    // twoHitPeg
-                    bool currently_inserted = false;
-                    for (int i = 0; i < usablePegs.Length; i++)
-                    {
-                        if (usablePegs[i] != null)
-                        {
-                            if (usablePegs[i].name == "twoHitPeg")
-                            {
-                                currently_inserted = true;
-                            }
-                        }
-                    }
-                    if (!currently_inserted)
-                    {
-                        usablePegs[how_many_unlocked] = twoHitPeg;
-                        shoot.startUnlockedPopUp(twoHitPeg);
-                        new_inserted = true;
-                    }
+                    TrySpawnCell(x, y);
                 }
             }
         }
     }
 
-    void spawnPegs(int xPos, int yPos)
-    {
-        int how_many_unlocked = 0;
-        for (int i = 0; i < usablePegs.Length; i++)
-        {
-            if (usablePegs[i] != null)
-            {
-                how_many_unlocked++;
-            }
+    private void SpawnBand(int x, int startY, int amount, int yStep) {
+        for (int i = 0; i < amount; i++) {
+            TrySpawnCell(x, startY + i * yStep);
+        }
+    }
+
+    private bool TrySpawnCell(int x, int y) {
+        if (x < 0 || x >= xGridSize || y < 0 || y >= yGridSize) {
+            return false;
         }
 
-        int normal = Random.Range(0, 100);
-        int upper_bound = (2 * levels_cleared);
-        if (upper_bound > 30)
-        {
-            upper_bound = 30;
+        if (grid[x, y]) {
+            return false;
         }
-        if (normal <= 80 - upper_bound)
-        {
-            spawnNormalPegs(xPos, yPos);
+
+        grid[x, y] = true;
+        spawnPegs(x, y);
+        return true;
+    }
+
+    private void spawnPegs(int x, int y) {
+        int specialChance = Mathf.Clamp(20 + levelsCleared * 2, 20, 50);
+        bool useNormalPegs = Range(0, 100) >= specialChance || unlockedPegs.Count == 0;
+
+        if (useNormalPegs) {
+            SpawnNormalPair(x, y);
             spawnCount += 2;
+            return;
         }
-        else
-        {
-            int range = 25 * how_many_unlocked;
-            int which_random = Random.Range(0, range);
-            if (which_random <= 25)
-            {
-                spawnSpecial(usablePegs[0], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
+
+        GameObject specialPeg = PickWeightedUnlockedPeg();
+
+        if (specialPeg == null) {
+            SpawnNormalPair(x, y);
+            spawnCount += 2;
+            return;
+        }
+
+        SpawnSide specialSide = Opposite(nextNormalSide);
+
+        SpawnSingleSpecial(specialPeg, x, y, specialSide);
+        SpawnSinglePeg(normalPeg, x, y, nextNormalSide, Quaternion.identity);
+
+        spawnCount += 1 + ExtraSpawnCountForSpecial(specialPeg);
+        nextNormalSide = Opposite(nextNormalSide);
+    }
+
+    public void spawnSpecial(GameObject obj, int xPos, int yPos, int which) {
+        SpawnSide specialSide = which == -1 ? SpawnSide.Right : SpawnSide.Left;
+        SpawnSingleSpecial(obj, xPos, yPos, specialSide);
+    }
+
+    private void SpawnSingleSpecial(GameObject peg, int x, int y, SpawnSide side) {
+        if (peg == null) {
+            return;
+        }
+
+        if (peg == arrowPegLeft) {
+            SpawnRandomArrowPeg(x, y, side);
+            return;
+        }
+
+        SpawnSinglePeg(peg, x, y, side, peg.transform.rotation);
+    }
+
+    private void SpawnRandomArrowPeg(int x, int y, SpawnSide side) {
+        GameObject[] arrows = { arrowPegLeft, arrowPegUpLeft, arrowPegRight, arrowPegUpRight };
+        GameObject chosenArrow = arrows[Range(0, arrows.Length)];
+
+        if (chosenArrow != null) {
+            SpawnSinglePeg(chosenArrow, x, y, side, chosenArrow.transform.rotation);
+        }
+    }
+
+    private int ExtraSpawnCountForSpecial(GameObject peg) {
+        if (peg == multiHitPeg || peg == pyramidPeg || peg == twoHitPeg) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private void SpawnNormalPair(int x, int y) {
+        SpawnSinglePeg(normalPeg, x, y, SpawnSide.Left, Quaternion.identity);
+        SpawnSinglePeg(normalPeg, x, y, SpawnSide.Right, Quaternion.identity);
+    }
+
+    private void SpawnSinglePeg(GameObject prefab, int x, int y, SpawnSide side, Quaternion rotation) {
+        if (prefab == null) {
+            return;
+        }
+
+        Instantiate(prefab, WorldPos(x, y, side), rotation);
+    }
+
+    private Vector3 WorldPos(int x, float y, SpawnSide side) {
+        float worldX = side == SpawnSide.Left ? zeroX + x : -zeroX - x;
+        float worldY = zeroY - y;
+        return new Vector3(worldX, worldY, 0f);
+    }
+
+    private SpawnSide Opposite(SpawnSide side) {
+        return side == SpawnSide.Left ? SpawnSide.Right : SpawnSide.Left;
+    }
+
+    private void SpawnSliderByMode(int x, int y, SlideMode mode, bool corner) {
+        if (mode == SlideMode.Both || mode == SlideMode.LeftOnly) {
+            if (corner) SpawnSlideCorner(SpawnSide.Left, x, y);
+            else SpawnSliderRail(SpawnSide.Left, x, y, -45f);
+        }
+
+        if (mode == SlideMode.Both || mode == SlideMode.RightOnly) {
+            if (corner) SpawnSlideCorner(SpawnSide.Right, x, y);
+            else SpawnSliderRail(SpawnSide.Right, x, y, 45f);
+        }
+    }
+
+    private void SpawnSliderPair(int x, float y) {
+        SpawnSliderRail(SpawnSide.Left, x, y, -45f);
+        SpawnSliderRail(SpawnSide.Right, x, y, 45f);
+    }
+
+    private void SpawnTriangleSlider(int x, float y) {
+        SpawnSliderRail(SpawnSide.Left, x, y, 45f);
+        SpawnSliderRail(SpawnSide.Right, x, y, -45f);
+    }
+
+    private void SpawnSliderRail(SpawnSide side, int x, float y, float zRotation) {
+        if (sliderPeg == null || sliderPegShort == null) {
+            return;
+        }
+
+        if (y < yGridSize - 2) {
+            GameObject rail = Instantiate(sliderPeg, WorldPos(x, y + 0.5f, side), Quaternion.identity);
+            rail.transform.Rotate(new Vector3(0f, 0f, zRotation));
+        }
+        else {
+            GameObject rail = Instantiate(sliderPegShort, WorldPos(x, y + 0.05f, side), Quaternion.identity);
+            rail.transform.Rotate(Vector3.zero);
+        }
+    }
+
+    private void SpawnSlideCorner(SpawnSide side, int x, float y) {
+        GameObject cornerPrefab = side == SpawnSide.Left ? slideCornerLeft : slideCornerRight;
+
+        if (cornerPrefab == null) {
+            return;
+        }
+
+        Vector3 offset = side == SpawnSide.Left ? new Vector3(0.1f, -0.05f, 0f) : new Vector3(-0.1f, -0.05f, 0f);
+        Instantiate(cornerPrefab, WorldPos(x, y, side) + offset, Quaternion.identity);
+    }
+
+    private void SpawnBucketWall(int x, float y) {
+        SpawnShortRail(SpawnSide.Left, x, y + 0.5f, 90f);
+        SpawnShortRail(SpawnSide.Right, x, y + 0.5f, 90f);
+    }
+
+    private void SpawnInsideBucketRail(int x, float y) {
+        SpawnShortRail(SpawnSide.Left, x, y + 0.5f, 0f);
+        SpawnShortRail(SpawnSide.Right, x, y + 0.5f, 0f);
+    }
+
+    private void SpawnShortRail(SpawnSide side, int x, float y, float zRotation) {
+        if (sliderPegShort == null) {
+            return;
+        }
+
+        GameObject rail = Instantiate(sliderPegShort, WorldPos(x, y, side), Quaternion.identity);
+        rail.transform.Rotate(new Vector3(0f, 0f, zRotation));
+    }
+
+    public void reduceCount() {
+        spawnCount = Mathf.Max(0, spawnCount - 1);
+    }
+
+    public void addLevelsCleared() {
+        levelsCleared++;
+    }
+
+    public int GetLevelsCleared() {
+        return levelsCleared;
+    }
+
+    public void SetLevelsCleared(int value) {
+        levelsCleared = value;
+    }
+
+    public int GetCurrentLevelNumber() {
+        return levelsCleared + 1;
+    }
+
+    public string GetCurrentBoardPatternName() {
+        return currentBoardPattern.ToString();
+    }
+
+    public List<string> GetUnlockedPegNames() {
+        List<string> names = new List<string>();
+
+        for (int i = 0; i < unlockedPegs.Count; i++) {
+            if (unlockedPegs[i] != null) {
+                names.Add(unlockedPegs[i].name);
             }
-            else if (which_random <= 50)
-            {
-                spawnSpecial(usablePegs[1], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
-            else if (which_random <= 75)
-            {
-                spawnSpecial(usablePegs[2], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
-            else if (which_random <= 100)
-            {
-                spawnSpecial(usablePegs[3], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
-            else if (which_random <= 125)
-            {
-                spawnSpecial(usablePegs[4], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
-            else if (which_random <= 150)
-            {
-                spawnSpecial(usablePegs[5], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
-            else if (which_random <= 175)
-            {
-                spawnSpecial(usablePegs[6], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
-            else if (which_random <= 200)
-            {
-                spawnSpecial(usablePegs[7], xPos, yPos, which_side_to_spawn);
-                spawnSingleNormalPeg(xPos, yPos, which_side_to_spawn);
-                spawnCount++;
-                which_side_to_spawn *= -1;
-            }
+        }
+
+        return names;
+    }
+
+    public void RegenerateToLevel(int levelNumber) {
+        for (int i = 1; i < levelNumber; i++) {
+            SpawnObjects();
         }
     }
 
-    public void spawnSpecial(GameObject obj, int xPos, int yPos, int which)
-    {
-        if (obj.name == "x2Peg")
-        {
-            spawnx2Peg(xPos, yPos, which);
-        }
-        else if (obj.name == "ammoPlusPeg")
-        {
-            spawnAmmoPlus(xPos, yPos, which);
-        }
-        else if (obj.name == "ammoMinusPeg")
-        {
-            spawnAmmoMinus(xPos, yPos, which);
-        }
-        else if (obj.name == "multiHitPeg")
-        {
-            spawnMultiHitPeg(xPos, yPos, which);
-            spawnCount++;
-        }
-        else if (obj.name == "blackholePeg")
-        {
-            spawnBlackHole(xPos, yPos, which);
-        }
-        else if (obj.name == "pyramidPeg")
-        {
-            spawnPyramidPeg(xPos, yPos, which);
-            spawnCount++;
-        }
-        else if (obj.name == "arrowPegLeft")
-        {
-            int which_arrow = Random.Range(0, 100);
-            if (which_arrow <= 25)
-            {
-                spawnArrowRight(xPos, yPos, which);
+    public List<BoardObjectSaveData> GetCurrentBoardState() {
+        List<BoardObjectSaveData> boardObjects = new List<BoardObjectSaveData>();
+
+        pegsToDelete[] objectsToSave = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete obj in objectsToSave) {
+            if (obj == null || !obj.gameObject.activeInHierarchy) {
+                continue;
             }
-            else if (which_arrow <= 50)
-            {
-                spawnArrowUpRight(xPos, yPos, which);
+
+            BoardObjectSaveData data = new BoardObjectSaveData();
+
+            data.saveId = GetSaveIdFromObjectName(obj.gameObject.name);
+            data.objectTag = obj.gameObject.tag;
+            data.position = obj.transform.position;
+            data.rotation = obj.transform.eulerAngles;
+
+            boardObjects.Add(data);
+        }
+
+        return boardObjects;
+    }
+
+    public bool RestoreBoardState(List<BoardObjectSaveData> boardObjects) {
+        InitializeSpawner();
+
+        if (boardObjects == null || boardObjects.Count == 0) {
+            Debug.LogWarning("No saved board objects found.");
+            return false;
+        }
+
+        int restoreableCount = CountRestoreableObjects(boardObjects);
+
+        Debug.Log(
+            "Restoring board state. Saved Objects: " + boardObjects.Count +
+            " | Restoreable Objects: " + restoreableCount
+        );
+
+        if (restoreableCount <= 0) {
+            Debug.LogWarning("No saved board objects could be mapped to prefabs.");
+            return false;
+        }
+
+        ClearCurrentBoardObjects();
+
+        spawnCount = 0;
+
+        for (int i = 0; i < boardObjects.Count; i++) {
+            BoardObjectSaveData data = boardObjects[i];
+            GameObject prefab = GetPrefabForSaveData(data);
+
+            if (prefab == null) {
+                Debug.LogWarning(
+                    "No prefab mapped for saved board object. " +
+                    "SaveId: " + data.saveId +
+                    " | Tag: " + data.objectTag
+                );
+                continue;
             }
-            else if (which_arrow <= 75)
-            {
-                spawnArrowLeft(xPos, yPos, which);
-            }
-            else
-            {
-                spawnArrowUpLeft(xPos, yPos, which);
+
+            GameObject restoredObject = Instantiate(
+                prefab,
+                data.position,
+                Quaternion.Euler(data.rotation)
+            );
+
+            spawnCount += GetSpawnCountValueForTag(restoredObject.tag);
+        }
+
+        RefreshSpawnCountFromScene();
+
+        Debug.Log("Board restore complete. spawnCount: " + spawnCount);
+        return true;
+    }
+
+    private int CountRestoreableObjects(List<BoardObjectSaveData> boardObjects) {
+        int count = 0;
+
+        for (int i = 0; i < boardObjects.Count; i++) {
+            if (GetPrefabForSaveData(boardObjects[i]) != null) {
+                count++;
             }
         }
-        else if (obj.name == "twoHitPeg")
-        {
-            spawnTwoHitPeg(xPos, yPos, which);
-            spawnCount++;
+
+        return count;
+    }
+
+    private void ClearCurrentBoardObjects() {
+        pegsToDelete[] objectsToDelete = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete obj in objectsToDelete) {
+            if (obj != null) {
+                obj.gameObject.SetActive(false);
+                Destroy(obj.gameObject);
+            }
         }
     }
 
-    void spawnNormalPegs(int xPos, int yPos)
-    {
-        Instantiate(normalPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
-        Instantiate(normalPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
+    public void ClearCurrentBoard() {
+        ClearCurrentBoardObjects();
+        spawnCount = 0;
     }
 
-    void spawnSliderPegs(int xPos, int yPos)
-    {
-        if (yPos < yGridSize - 2)
-        {
-            Instantiate(sliderPeg, new Vector3(zeroX + xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, -45));
-            Instantiate(sliderPeg, new Vector3(-zeroX - xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0,0,45));
+    private GameObject GetPrefabForSaveData(BoardObjectSaveData data) {
+        if (data == null) {
+            return null;
         }
-        else
-        {
-            Instantiate(sliderPegShort, new Vector3(zeroX + xPos, zeroY - yPos - 0.05f, 0), Quaternion.identity);
-            Instantiate(sliderPegShort, new Vector3(-zeroX - xPos, zeroY - yPos - 0.05f, 0), Quaternion.identity);
-        }    
+
+        GameObject prefabBySaveId = GetPrefabForSaveId(data.saveId);
+
+        if (prefabBySaveId != null) {
+            return prefabBySaveId;
+        }
+
+        GameObject prefabByKnownName = GetKnownPrefabBySaveId(data.saveId);
+
+        if (prefabByKnownName != null) {
+            return prefabByKnownName;
+        }
+
+        return GetKnownPrefabByTag(data.objectTag);
     }
 
-    void spawnSliderPegsCorner(int xPos, int yPos)
-    {
-        Instantiate(slideCornerLeft, new Vector3(zeroX + xPos + 0.1f, zeroY - yPos - 0.05f, 0), Quaternion.identity);
-        Instantiate(slideCornerRight, new Vector3(-zeroX - xPos - 0.1f, zeroY - yPos - 0.05f, 0), Quaternion.identity);
+    private GameObject GetPrefabForSaveId(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return null;
+        }
+
+        for (int i = 0; i < boardPrefabEntries.Count; i++) {
+            if (boardPrefabEntries[i] == null) {
+                continue;
+            }
+
+            if (boardPrefabEntries[i].saveId == saveId) {
+                return boardPrefabEntries[i].prefab;
+            }
+        }
+
+        return null;
     }
 
-    void spawnLeftSliderPegs(int xPos, int yPos)
-    {
-        if (yPos < yGridSize - 2)
-        {
-            Instantiate(sliderPeg, new Vector3(zeroX + xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, -45));
+    private GameObject GetKnownPrefabBySaveId(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return null;
         }
-        else
-        {
-            Instantiate(sliderPegShort, new Vector3(zeroX + xPos, zeroY - yPos - 0.05f, 0), Quaternion.identity);
+
+        GameObject[] knownPrefabs = {
+            normalPeg,
+            multiHitPeg,
+            pyramidPeg,
+            blackholePeg,
+            ammoPlusPeg,
+            ammoMinusPeg,
+            x2Peg,
+            arrowPegLeft,
+            arrowPegUpLeft,
+            arrowPegRight,
+            arrowPegUpRight,
+            twoHitPeg,
+            sliderPeg,
+            sliderPegShort,
+            slideCornerLeft,
+            slideCornerRight
+        };
+
+        for (int i = 0; i < knownPrefabs.Length; i++) {
+            if (knownPrefabs[i] == null) {
+                continue;
+            }
+
+            if (string.Equals(knownPrefabs[i].name, saveId, System.StringComparison.OrdinalIgnoreCase)) {
+                return knownPrefabs[i];
+            }
         }
+
+        return null;
     }
 
-    void spawnLeftSliderPegsCorner(int xPos, int yPos)
-    {
-        Instantiate(slideCornerLeft, new Vector3(zeroX + xPos + 0.1f, zeroY - yPos - 0.05f, 0), Quaternion.identity);
-    }
-
-    void spawnRightSliderPegs(int xPos, int yPos)
-    {
-        if (yPos < yGridSize - 2)
-        {
-            Instantiate(sliderPeg, new Vector3(-zeroX - xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, 45));
-        }
-        else
-        {
-            Instantiate(sliderPegShort, new Vector3(-zeroX - xPos, zeroY - yPos - 0.05f, 0), Quaternion.identity);
-        }
-    }
-
-    void spawnSliderTrianglePegs(int xPos, int yPos)
-    {
-        Instantiate(sliderPeg, new Vector3(-zeroX - xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, -45));
-        Instantiate(sliderPeg, new Vector3(zeroX + xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, 45));
-    }
-
-    void spawnSlideBucketPegs(int xPos, float yPos)
-    {
-        Instantiate(sliderPegShort, new Vector3(-zeroX - xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, 90));
-        Instantiate(sliderPegShort, new Vector3(zeroX + xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, 90));
-    }
-    void spawnInsideSlideBucketPegs(int xPos, float yPos)
-    {
-        Instantiate(sliderPegShort, new Vector3(-zeroX - xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, 0));
-        Instantiate(sliderPegShort, new Vector3(zeroX + xPos, zeroY - yPos - 0.5f, 0), Quaternion.identity).gameObject.transform.Rotate(new Vector3(0, 0, 0));
-    }
-
-    void spawnRightSliderPegsCorner(int xPos, int yPos)
-    {
-       Instantiate(slideCornerRight, new Vector3(-zeroX - xPos - 0.1f, zeroY - yPos - 0.05f, 0), Quaternion.identity);
-    }
-
-    void spawnSingleNormalPeg(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(normalPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-        else
-        {
-            Instantiate(normalPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-    }
-
-    void spawnPyramidPeg(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(pyramidPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-        else
-        {
-            Instantiate(pyramidPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-    }
-
-    void spawnMultiHitPeg(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(multiHitPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-        else
-        {
-            Instantiate(multiHitPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-    }
-
-    void spawnTwoHitPeg(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(twoHitPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
-        }
-        else
-        {
-            Instantiate(twoHitPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
+    private GameObject GetKnownPrefabByTag(string objectTag) {
+        switch (objectTag) {
+            case "Peg":
+                return normalPeg;
+            case "AmmoPlus":
+                return ammoPlusPeg;
+            case "AmmoMinus":
+                return ammoMinusPeg;
+            case "MultiHitPeg":
+                return multiHitPeg;
+            case "TwoHitPeg":
+                return twoHitPeg;
+            case "BlackHole":
+                return blackholePeg;
+            case "x2":
+                return x2Peg;
+            case "ArrowLeft":
+                return arrowPegLeft;
+            case "ArrowRight":
+                return arrowPegRight;
+            case "ArrowUpLeft":
+                return arrowPegUpLeft;
+            case "ArrowUpRight":
+                return arrowPegUpRight;
+            case "Pyramid":
+            case "PyramidPeg":
+                return pyramidPeg;
+            default:
+                return null;
         }
     }
 
-    void spawnBlackHole(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(blackholePeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
+    private string GetSaveIdFromObjectName(string objectName) {
+        if (string.IsNullOrWhiteSpace(objectName)) {
+            return "";
         }
-        else
-        {
-            Instantiate(blackholePeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
+
+        return objectName.Replace("(Clone)", "").Trim();
+    }
+
+    private int GetSpawnCountValueForTag(string objectTag) {
+        switch (objectTag) {
+            case "Peg":
+            case "MultiHitPeg":
+            case "TwoHitPeg":
+            case "Pyramid":
+            case "PyramidPeg":
+                return 1;
+
+            default:
+                return 0;
         }
     }
 
-    void spawnAmmoMinus(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(ammoMinusPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
+    public bool IsBoardCleared() {
+        return RefreshSpawnCountFromScene() <= 0;
+    }
+
+    public int RefreshSpawnCountFromScene() {
+        spawnCount = CountRemainingClearableObjects();
+        return spawnCount;
+    }
+
+    private int CountRemainingClearableObjects() {
+        int count = 0;
+        pegsToDelete[] objects = FindObjectsOfType<pegsToDelete>();
+
+        foreach (pegsToDelete obj in objects) {
+            if (obj == null || !obj.gameObject.activeInHierarchy) {
+                continue;
+            }
+
+            if (CountsTowardLevelClear(obj.gameObject)) {
+                count++;
+            }
         }
-        else
-        {
-            Instantiate(ammoMinusPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
+
+        return count;
+    }
+
+    private bool CountsTowardLevelClear(GameObject obj) {
+        switch (obj.tag) {
+            case "Peg":
+            case "MultiHitPeg":
+            case "TwoHitPeg":
+            case "Pyramid":
+            case "PyramidPeg":
+                return true;
+
+            default:
+                return false;
         }
     }
 
-    void spawnAmmoPlus(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(ammoPlusPeg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
+    private GameObject PickWeightedUnlockedPeg() {
+        if (unlockedPegs.Count == 0) {
+            return null;
         }
-        else
-        {
-            Instantiate(ammoPlusPeg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
+
+        int totalWeight = 0;
+
+        for (int i = 0; i < unlockedPegs.Count; i++) {
+            totalWeight += GetCurrentSpecialPegWeight(unlockedPegs[i]);
         }
-    }
-    void spawnx2Peg(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(x2Peg, new Vector3(-zeroX - xPos, zeroY - yPos, 0), Quaternion.identity);
+
+        if (totalWeight <= 0) {
+            return unlockedPegs[Range(0, unlockedPegs.Count)];
         }
-        else
-        {
-            Instantiate(x2Peg, new Vector3(zeroX + xPos, zeroY - yPos, 0), Quaternion.identity);
+
+        int roll = Range(0, totalWeight);
+        int runningWeight = 0;
+
+        for (int i = 0; i < unlockedPegs.Count; i++) {
+            GameObject peg = unlockedPegs[i];
+            runningWeight += GetCurrentSpecialPegWeight(peg);
+
+            if (roll < runningWeight) {
+                return peg;
+            }
         }
+
+        return unlockedPegs[unlockedPegs.Count - 1];
     }
 
-    void spawnArrowLeft(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(arrowPegLeft, new Vector3(-zeroX - xPos, zeroY - yPos, 0), arrowPegLeft.transform.rotation);
+    private int GetCurrentSpecialPegWeight(GameObject peg) {
+        if (peg == null) {
+            return 0;
         }
-        else
-        {
-            Instantiate(arrowPegLeft, new Vector3(zeroX + xPos, zeroY - yPos, 0), arrowPegLeft.transform.rotation);
+
+        string saveId = GetSaveIdForPrefab(peg);
+        int bonusWeight = 0;
+
+        if (specialPegWeightBonuses.ContainsKey(saveId)) {
+            bonusWeight = specialPegWeightBonuses[saveId];
         }
+
+        return Mathf.Max(0, GetBaseSpecialPegWeight(peg) + bonusWeight);
     }
 
-    void spawnArrowUpLeft(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(arrowPegUpLeft, new Vector3(-zeroX - xPos, zeroY - yPos, 0), arrowPegUpLeft.transform.rotation);
+    private int GetBaseSpecialPegWeight(GameObject peg) {
+        if (peg == null) {
+            return 0;
         }
-        else
-        {
-            Instantiate(arrowPegUpLeft, new Vector3(zeroX + xPos, zeroY - yPos, 0), arrowPegUpLeft.transform.rotation);
+
+        if (peg == ammoPlusPeg) {
+            return 30;
         }
+
+        if (peg == ammoMinusPeg) {
+            return 18;
+        }
+
+        if (peg == x2Peg) {
+            return 12;
+        }
+
+        if (peg == multiHitPeg) {
+            return 12;
+        }
+
+        if (peg == twoHitPeg) {
+            return 12;
+        }
+
+        if (peg == blackholePeg) {
+            return 8;
+        }
+
+        if (peg == pyramidPeg) {
+            return 8;
+        }
+
+        if (peg == arrowPegLeft) {
+            return 10;
+        }
+
+        return 10;
     }
 
-    void spawnArrowRight(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(arrowPegRight, new Vector3(-zeroX - xPos, zeroY - yPos, 0), arrowPegRight.transform.rotation);
+    private string GetSaveIdForPrefab(GameObject prefab) {
+        if (prefab == null) {
+            return "";
         }
-        else
-        {
-            Instantiate(arrowPegRight, new Vector3(zeroX + xPos, zeroY - yPos, 0), arrowPegRight.transform.rotation);
-        }
+
+        return prefab.name.Replace("(Clone)", "").Trim();
     }
 
-    void spawnArrowUpRight(int xPos, int yPos, int which)
-    {
-        if (which == -1)
-        {
-            Instantiate(arrowPegUpRight, new Vector3(-zeroX - xPos, zeroY - yPos, 0), arrowPegUpRight.transform.rotation);
+    public void ModifySpecialPegWeight(string saveId, int amount) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return;
         }
-        else
-        {
-            Instantiate(arrowPegUpRight, new Vector3(zeroX + xPos, zeroY - yPos, 0), arrowPegUpRight.transform.rotation);
+
+        if (!specialPegWeightBonuses.ContainsKey(saveId)) {
+            specialPegWeightBonuses[saveId] = 0;
         }
+
+        specialPegWeightBonuses[saveId] = Mathf.Clamp(
+            specialPegWeightBonuses[saveId] + amount,
+            -100,
+            100
+        );
     }
 
-    public void reduceCount()
-    {
-        spawnCount--;
+    public void SetSpecialPegWeightBonus(string saveId, int bonusWeight) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return;
+        }
+
+        specialPegWeightBonuses[saveId] = Mathf.Clamp(bonusWeight, -100, 100);
     }
 
-    public void addLevelsCleared()
-    {
-        levels_cleared++;
+    public int GetSpecialPegWeightBonus(string saveId) {
+        if (string.IsNullOrWhiteSpace(saveId)) {
+            return 0;
+        }
+
+        if (!specialPegWeightBonuses.ContainsKey(saveId)) {
+            return 0;
+        }
+
+        return specialPegWeightBonuses[saveId];
+    }
+
+    public List<PegWeightSaveData> GetSpecialPegWeightBonuses() {
+        List<PegWeightSaveData> savedWeights = new List<PegWeightSaveData>();
+
+        foreach (KeyValuePair<string, int> pair in specialPegWeightBonuses) {
+            if (pair.Value == 0) {
+                continue;
+            }
+
+            PegWeightSaveData data = new PegWeightSaveData();
+            data.saveId = pair.Key;
+            data.bonusWeight = pair.Value;
+
+            savedWeights.Add(data);
+        }
+
+        return savedWeights;
+    }
+
+    public void RestoreSpecialPegWeightBonuses(List<PegWeightSaveData> savedWeights) {
+        specialPegWeightBonuses.Clear();
+
+        if (savedWeights == null) {
+            return;
+        }
+
+        for (int i = 0; i < savedWeights.Count; i++) {
+            PegWeightSaveData data = savedWeights[i];
+
+            if (data == null || string.IsNullOrWhiteSpace(data.saveId)) {
+                continue;
+            }
+
+            specialPegWeightBonuses[data.saveId] = data.bonusWeight;
+        }
     }
 }

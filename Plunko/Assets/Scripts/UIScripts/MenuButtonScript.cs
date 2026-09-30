@@ -6,131 +6,206 @@ using UnityEngine.UI;
 
 public class MenuButtonScript : MonoBehaviour
 {
-    public AudioSource blipSelect;
-    public GameObject leaderBoardPanel;
-    public GameObject achievementPanel;
-    public GameObject areYouSurePanel;
-    public GameObject leaderboardClose;
-    public GameObject leaderboardClear;
-    public Text highscoreText;
+    [Header("Audio")]
+    [SerializeField] private AudioSource blipSelect;
+
+    [Header("Panels")]
+    [SerializeField] private GameObject leaderBoardPanel;
+    [SerializeField] private GameObject achievementPanel;
+    [SerializeField] private GameObject areYouSurePanel;
+    [SerializeField] private GameObject customPanel;
+
+    [Header("Leaderboard Buttons")]
+    [SerializeField] private GameObject leaderboardClose;
+    [SerializeField] private GameObject leaderboardClear;
+
+    [Header("Run Buttons")]
+    [SerializeField] private GameObject continueRunButton;
+    [SerializeField] private GameObject newRunButton;
+
+    [Header("Text")]
+    [SerializeField] private Text highscoreText;
+
     public GameData gameData;
-    public GameObject customPanel;
+
     private int tempHighScore;
+
     private void Awake() {
         gameData = SaveSystem.Load();
         tempHighScore = gameData.highScore;
-        highscoreText.text = "Highscore: " + tempHighScore;
+
+        UpdateHighScoreText();
+        UpdateRunButtons();
     }
 
-    public void StartGame()
-    {
-        blipSelect.Play();
-        if (SceneManager.GetActiveScene().name == "Menu")
-        {
-            if (PlayerPrefs.GetFloat("FirstGame") == 0)
-            {
-                if (SystemInfo.deviceType == DeviceType.Handheld)
-                {
-                    StartCoroutine(changeScene("TutorialMobile", blipSelect.clip.length));
-                }
-                else
-                {
-                    StartCoroutine(changeScene("TutorialPC", blipSelect.clip.length));
-                }
-            }
-            else
-            {
-                StartCoroutine(changeScene("infiniteLevel", blipSelect.clip.length));
-            }
+    private void UpdateRunButtons() {
+        bool hasActiveRun = HasActiveRunSave();
+
+        if (continueRunButton != null) {
+            continueRunButton.SetActive(hasActiveRun);
         }
-        
+
+        if (newRunButton != null) {
+            newRunButton.SetActive(true);
+        }
     }
 
-    IEnumerator changeScene(string scene, float time)
-    {
-        yield return new WaitForSeconds(time);
+    private bool HasActiveRunSave() {
+        RunSaveData runSaveData = SaveSystem.LoadRun();
+
+        if (runSaveData == null) {
+            return false;
+        }
+
+        return runSaveData.hasActiveRun && !runSaveData.gameOver;
+    }
+
+    public void StartGame() {
+        PlaySelectSound();
+
+        if (SceneManager.GetActiveScene().name != "Menu") {
+            return;
+        }
+
+        if (PlayerPrefs.GetFloat("FirstGame") == 0) {
+            LoadTutorialSceneAfterSound();
+            return;
+        }
+
+        StartCoroutine(ChangeScene("infiniteLevel", GetSelectSoundLength()));
+    }
+
+    public void ContinueRun() {
+        PlaySelectSound();
+
+        if (!HasActiveRunSave()) {
+            NewRun();
+            return;
+        }
+
+        StartCoroutine(ChangeScene("infiniteLevel", GetSelectSoundLength()));
+    }
+
+    public void NewRun() {
+        PlaySelectSound();
+        SaveSystem.DeleteRunSave();
+        StartCoroutine(ChangeScene("infiniteLevel", GetSelectSoundLength()));
+    }
+
+    private void LoadTutorialSceneAfterSound() {
+        string tutorialScene = SystemInfo.deviceType == DeviceType.Handheld ? "TutorialMobile" : "TutorialPC";
+        StartCoroutine(ChangeScene(tutorialScene, GetSelectSoundLength()));
+    }
+
+    public void ExitGame() {
+        PlaySelectSound();
+        StartCoroutine(ExitGameAfterDelay(GetSelectSoundLength()));
+    }
+
+    private IEnumerator ChangeScene(string scene, float delay) {
+        yield return new WaitForSeconds(delay);
         SceneManager.LoadScene(scene);
     }
 
-    public void ExitGame()
-    {
-        blipSelect.Play();
-        StartCoroutine(exitGame(blipSelect.clip.length));
-    }
-
-    IEnumerator exitGame(float time)
-    {
-        yield return new WaitForSeconds(time);
+    private IEnumerator ExitGameAfterDelay(float delay) {
+        yield return new WaitForSeconds(delay);
         Application.Quit();
     }
-    private void Update() {
-        //highscoreText.text = "Highscore: " + tempHighScore;
+
+    public void leaderBoards() {
+        PlaySelectSound();
+        SetPanelActive(leaderBoardPanel, true);
     }
-    public void leaderBoards(){
-        blipSelect.Play();
-        leaderBoardPanel.SetActive(true);
+
+    public void closeLeaderboards() {
+        PlaySelectSound();
+        SetPanelActive(leaderBoardPanel, false);
     }
-    public void closeLeaderboards(){
-        blipSelect.Play();
-        leaderBoardPanel.SetActive(false);
-    }
-    public void resetHighScore(){
-        blipSelect.Play();
+
+    public void resetHighScore() {
+        PlaySelectSound();
+
+        if (gameData == null) {
+            gameData = SaveSystem.Load();
+        }
+
         gameData.highScore = 0;
         tempHighScore = 0;
-        highscoreText.text = "Highscore: " + tempHighScore;
+
+        UpdateHighScoreText();
         SaveSystem.Save(gameData);
     }
 
-    public void dataAreYouSure()
-    {
-        blipSelect.Play();
-        leaderboardClose.SetActive(false);
-        leaderboardClear.SetActive(false);
-        areYouSurePanel.SetActive(true);
+    public void dataAreYouSure() {
+        PlaySelectSound();
+        SetClearConfirmPanel(true);
     }
 
-    public void yesClear()
-    {
-        blipSelect.Play();
+    public void yesClear() {
+        PlaySelectSound();
+
         resetHighScore();
-        leaderboardClose.SetActive(true);
-        leaderboardClear.SetActive(true);
-        areYouSurePanel.SetActive(false);
+        SetClearConfirmPanel(false);
+
         gameData = SaveSystem.Load();
         tempHighScore = 0;
-        highscoreText.text = "Highscore: " + tempHighScore;
+        UpdateHighScoreText();
     }
 
-    public void noClear()
-    {
-        blipSelect.Play();
-        leaderboardClose.SetActive(true);
-        leaderboardClear.SetActive(true);
-        areYouSurePanel.SetActive(false);
+    public void noClear() {
+        PlaySelectSound();
+        SetClearConfirmPanel(false);
     }
 
-    public void openAchievementMenu()
-    {
-        blipSelect.Play();
-        achievementPanel.SetActive(true);
+    public void openAchievementMenu() {
+        PlaySelectSound();
+        SetPanelActive(achievementPanel, true);
     }
 
-    public void closeAchievementMenu()
-    {
-        blipSelect.Play();
-        achievementPanel.SetActive(false);
+    public void closeAchievementMenu() {
+        PlaySelectSound();
+        SetPanelActive(achievementPanel, false);
     }
 
-    public void openCustom()
-    {
-        blipSelect.Play();
-        customPanel.SetActive(true);
+    public void openCustom() {
+        PlaySelectSound();
+        SetPanelActive(customPanel, true);
     }
 
-    public void closeCustom()
-    {
-        blipSelect.Play();
-        customPanel.SetActive(false);
+    public void closeCustom() {
+        PlaySelectSound();
+        SetPanelActive(customPanel, false);
+    }
+
+    private void SetClearConfirmPanel(bool active) {
+        SetPanelActive(leaderboardClose, !active);
+        SetPanelActive(leaderboardClear, !active);
+        SetPanelActive(areYouSurePanel, active);
+    }
+
+    private void SetPanelActive(GameObject panel, bool active) {
+        if (panel != null) {
+            panel.SetActive(active);
+        }
+    }
+
+    private void UpdateHighScoreText() {
+        if (highscoreText != null) {
+            highscoreText.text = "Highscore: " + tempHighScore;
+        }
+    }
+
+    private void PlaySelectSound() {
+        if (blipSelect != null) {
+            blipSelect.Play();
+        }
+    }
+
+    private float GetSelectSoundLength() {
+        if (blipSelect != null && blipSelect.clip != null) {
+            return blipSelect.clip.length;
+        }
+
+        return 0f;
     }
 }

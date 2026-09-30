@@ -1,192 +1,294 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 
 public class Tutorial_Proj : MonoBehaviour
 {
-    private Rigidbody2D rb;
-    private Vector3 lastVelocity;
-    [SerializeField] private ParticleSystem ps, level_clear_ps;
-    private Tutorial_Shooter shoot;
-    private TutorialMultiHit mh;
-    private TutorialTwoHit th;
-    private AudioSource audioClip;
-    private Transform blackHole;
-    private AudioSource shoot_audio;
+    [Header("Effects")]
+    [SerializeField] private ParticleSystem ps;
+    [SerializeField] private ParticleSystem level_clear_ps;
+
+    [Header("Projectiles")]
     [SerializeField] private GameObject ArrowProj;
 
-    // Start is called before the first frame update
-    void Start()
-    {
-        audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
+    private const float BounceDamping = 0.9f;
+    private const float ArrowProjectileSpeed = 7.5f;
+
+    private Rigidbody2D rb;
+    private Vector3 lastVelocity;
+    private Tutorial_Shooter shoot;
+    private Transform blackHole;
+
+    private AudioSource popAudio;
+    private AudioSource shootAudio;
+    private AudioSource ammoPlusAudio;
+    private AudioSource blackHoleAudio;
+
+    private void Start() {
+        CacheComponents();
+        CacheSceneReferences();
+        CacheAudioSources();
+    }
+
+    private void Update() {
+        if (rb != null) {
+            lastVelocity = rb.velocity;
+        }
+    }
+
+    private void CacheComponents() {
         rb = GetComponent<Rigidbody2D>();
-        shoot = GameObject.Find("Shooter").GetComponent<Tutorial_Shooter>();
-        if (SceneManager.GetActiveScene().name == "Tutorial3")
-        {
-            blackHole = GameObject.Find("portalPaddle").GetComponent<Transform>();
+    }
+
+    private void CacheSceneReferences() {
+        GameObject shooterObject = GameObject.Find("Shooter");
+        if (shooterObject != null) {
+            shoot = shooterObject.GetComponent<Tutorial_Shooter>();
         }
-        shoot_audio = GameObject.Find("shoot").GetComponent<AudioSource>();
+
+        GameObject blackHoleObject = GameObject.Find("portalPaddle");
+        if (blackHoleObject != null) {
+            blackHole = blackHoleObject.transform;
+        }
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        lastVelocity = rb.velocity;
+    private void CacheAudioSources() {
+        popAudio = FindAudioSource("pop");
+        shootAudio = FindAudioSource("shoot");
+        ammoPlusAudio = FindAudioSource("ammoplus");
+        blackHoleAudio = FindAudioSource("blackhole");
     }
 
-    private void OnCollisionEnter2D(Collision2D other)
-    {
-        var speed = lastVelocity.magnitude;
-        var dir = Vector3.Reflect(lastVelocity.normalized, other.contacts[0].normal);
-        rb.velocity = (dir * Mathf.Max(speed, 0f) * .9f);
+    private AudioSource FindAudioSource(string objectName) {
+        GameObject audioObject = GameObject.Find(objectName);
+        return audioObject != null ? audioObject.GetComponent<AudioSource>() : null;
+    }
 
-        if (other.gameObject.CompareTag("Ground"))
-        {
-            Tutorial_Shooter.shooting = false;
+    private void OnCollisionEnter2D(Collision2D other) {
+        ApplyBounce(other);
+
+        switch (other.gameObject.tag) {
+            case "Ground":
+                HitGround();
+                break;
+            case "TutorialPeg":
+                HitTutorialPeg(other.gameObject);
+                break;
+            case "TutorialMultiHit":
+                HitTutorialMultiHit(other.gameObject);
+                break;
+            case "TutorialTwoHitPeg":
+                HitTutorialTwoHit(other.gameObject);
+                break;
+            case "wall":
+                PlaySound(popAudio);
+                break;
+            case "ArrowUpLeft":
+                HitArrowPeg(other.gameObject, "LauncherRight", new Vector3(-1f, 1f, 0f));
+                break;
+            case "ArrowLeft":
+                HitArrowPeg(other.gameObject, "LauncherRight", new Vector3(-1f, 0f, 0f));
+                break;
+            case "ArrowRight":
+                HitArrowPeg(other.gameObject, "LauncherLeft", new Vector3(1f, 0f, 0f));
+                break;
+            case "ArrowUpRight":
+                HitArrowPeg(other.gameObject, "LauncherLeft", new Vector3(1f, 1f, 0f));
+                break;
+        }
+    }
+
+    private void ApplyBounce(Collision2D collision) {
+        if (rb == null || collision.contactCount == 0) {
+            return;
+        }
+
+        float speed = lastVelocity.magnitude;
+        Vector3 direction = Vector3.Reflect(lastVelocity.normalized, collision.contacts[0].normal);
+        rb.velocity = direction * Mathf.Max(speed, 0f) * BounceDamping;
+    }
+
+    private void HitGround() {
+        Tutorial_Shooter.shooting = false;
+
+        if (shoot != null) {
             shoot.setChargeButtonShoot();
-            Destroy(gameObject);
-            if (shoot.getTutorialPegsActive() <= 0 && SceneManager.GetActiveScene().name == "TutorialPC")
-            {
-                SceneManager.LoadScene("Tutorial2");
-            }
-            else if (shoot.getTutorialPegsActive() <= 0 && SceneManager.GetActiveScene().name == "TutorialMobile")
-            {
-                SceneManager.LoadScene("Tutorial2");
-            }
-            else if (shoot.getTutorialPegsActive() <= 0 && SceneManager.GetActiveScene().name == "Tutorial2")
-            {
-                SceneManager.LoadScene("Tutorial3");
-            }
-            else if (shoot.getTutorialPegsActive() <= 0 && SceneManager.GetActiveScene().name == "Tutorial3")
-            {
-                shoot.tutorial2Open();
-            }
         }
-        else if (other.gameObject.CompareTag("TutorialPeg"))
-        {
-            audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
-            if (!shoot.getSettingsOpen())
-            {
-                Instantiate(ps, new Vector3(other.transform.position.x, other.transform.position.y, ps.transform.position.z), ps.transform.rotation);   //spawns the particle effects, can remove
-            }
-            audioClip.Play();
-            shoot.lowerTutorialPegCount();
-            Destroy(other.gameObject);
-        }
-        else if (other.gameObject.CompareTag("TutorialMultiHit"))
-        {
-            mh = other.gameObject.GetComponent<TutorialMultiHit>();
-            if (mh.hit())
-            {
-                if (!shoot.getSettingsOpen())
-                {
-                    Instantiate(ps, new Vector3(other.transform.position.x, other.transform.position.y, ps.transform.position.z), ps.transform.rotation);   //spawns the particle effects, can remove
-                }
-                shoot.lowerTutorialPegCount();
-                Destroy(other.gameObject);
-            }
-            audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
-            audioClip.Play();
-        }
-        else if (other.gameObject.CompareTag("TutorialTwoHitPeg"))
-        {
-            th = other.gameObject.GetComponent<TutorialTwoHit>();
-            if (th.hit())
-            {
-                if (!shoot.getSettingsOpen())
-                {
-                    Instantiate(ps, new Vector3(other.transform.position.x, other.transform.position.y, ps.transform.position.z), ps.transform.rotation);   //spawns the particle effects, can remove
-                }
-                shoot.lowerTutorialPegCount();
-                Destroy(other.gameObject);
-            }
-            audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
-            audioClip.Play();
-        }
-        else if (other.gameObject.CompareTag("wall"))
-        {
-            audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
-            audioClip.Play();
-        }
-        else if (other.gameObject.CompareTag("ArrowUpLeft"))
-        {
-            shoot_audio.Play();
-            Transform t = GameObject.Find("LauncherRight").GetComponent<Transform>();
-            GameObject spawnedBullet = Instantiate(ArrowProj, t.position, Quaternion.identity);
-            Rigidbody2D rb = spawnedBullet.GetComponent<Rigidbody2D>();
-            rb.velocity = new Vector3(-1, 1f, 0) * 7.5f;
-            Destroy(other.gameObject);
 
-        }
-        else if (other.gameObject.CompareTag("ArrowLeft"))
-        {
-            shoot_audio.Play();
-            Transform t = GameObject.Find("LauncherRight").GetComponent<Transform>();
-            GameObject spawnedBullet = Instantiate(ArrowProj, t.position, Quaternion.identity);
-            Rigidbody2D rb = spawnedBullet.GetComponent<Rigidbody2D>();
-            rb.velocity = new Vector3(-1, 0, 0) * 7.5f;
-            Destroy(other.gameObject);
+        Destroy(gameObject);
+        HandleTutorialProgression();
+    }
 
+    private void HandleTutorialProgression() {
+        if (shoot == null || shoot.getTutorialPegsActive() > 0) {
+            return;
         }
-        else if (other.gameObject.CompareTag("ArrowRight"))
-        {
-            shoot_audio.Play();
-            Transform t = GameObject.Find("LauncherLeft").GetComponent<Transform>();
-            GameObject spawnedBullet = Instantiate(ArrowProj, t.position, Quaternion.identity);
-            Rigidbody2D rb = spawnedBullet.GetComponent<Rigidbody2D>();
-            rb.velocity = new Vector3(1, 0, 0) * 7.5f;
-            Destroy(other.gameObject);
 
+        string currentScene = SceneManager.GetActiveScene().name;
+
+        if (currentScene == "TutorialPC" || currentScene == "TutorialMobile") {
+            SceneManager.LoadScene("Tutorial2");
         }
-        else if (other.gameObject.CompareTag("ArrowUpRight"))
-        {
-            shoot_audio.Play();
-            Transform t = GameObject.Find("LauncherLeft").GetComponent<Transform>();
-            GameObject spawnedBullet = Instantiate(ArrowProj, t.position, Quaternion.identity);
-            Rigidbody2D rb = spawnedBullet.GetComponent<Rigidbody2D>();
-            rb.velocity = new Vector3(1, 1, 0) * 7.5f;
-            Destroy(other.gameObject);
-
+        else if (currentScene == "Tutorial2") {
+            SceneManager.LoadScene("Tutorial3");
+        }
+        else if (currentScene == "Tutorial3") {
+            shoot.tutorial2Open();
         }
     }
 
-    private void OnTriggerEnter2D(Collider2D collision)
-    {
-        if (collision.gameObject.CompareTag("new_multiplier"))
-        {
-            GetComponent<TrailRenderer>().Clear();
-            this.transform.position = new Vector3(blackHole.position.x, blackHole.position.y, this.transform.position.z);
-            audioClip = GameObject.Find("ammoplus").GetComponent<AudioSource>();
-            audioClip.Play();
-            lastVelocity = rb.velocity / 4f;
-            rb.velocity = rb.velocity / 4f;
-            GetComponent<TrailRenderer>().Clear();
-        }
-        else if (collision.gameObject.CompareTag("BlackHole"))
-        {
-            Destroy(collision.gameObject);
-            GetComponent<TrailRenderer>().Clear();
-            this.transform.position = new Vector3(blackHole.position.x, blackHole.position.y, this.transform.position.z);
-            audioClip = GameObject.Find("blackhole").GetComponent<AudioSource>();
-            audioClip.Play();
-            lastVelocity = rb.velocity / 2f;
-            rb.velocity = rb.velocity / 2f;
-            GetComponent<TrailRenderer>().Clear();
+    private void HitTutorialPeg(GameObject peg) {
+        SpawnHitParticles(peg.transform.position);
+        PlaySound(popAudio);
+
+        if (shoot != null) {
             shoot.lowerTutorialPegCount();
         }
-        else if (collision.gameObject.CompareTag("slide"))
-        {
-            audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
-            audioClip.Play();
-            StartCoroutine(deleteSlide(collision.gameObject));
+
+        Destroy(peg);
+    }
+
+    private void HitTutorialMultiHit(GameObject peg) {
+        TutorialMultiHit multiHit = peg.GetComponent<TutorialMultiHit>();
+
+        if (multiHit != null && multiHit.hit()) {
+            SpawnHitParticles(peg.transform.position);
+
+            if (shoot != null) {
+                shoot.lowerTutorialPegCount();
+            }
+
+            Destroy(peg);
+        }
+
+        PlaySound(popAudio);
+    }
+
+    private void HitTutorialTwoHit(GameObject peg) {
+        TutorialTwoHit twoHit = peg.GetComponent<TutorialTwoHit>();
+
+        if (twoHit != null && twoHit.hit()) {
+            SpawnHitParticles(peg.transform.position);
+
+            if (shoot != null) {
+                shoot.lowerTutorialPegCount();
+            }
+
+            Destroy(peg);
+        }
+
+        PlaySound(popAudio);
+    }
+
+    private void HitArrowPeg(GameObject peg, string launcherName, Vector3 direction) {
+        SpawnArrowProjectile(launcherName, direction);
+        Destroy(peg);
+    }
+
+    private void OnTriggerEnter2D(Collider2D collision) {
+        switch (collision.gameObject.tag) {
+            case "new_multiplier":
+                HitNewMultiplier();
+                break;
+            case "BlackHole":
+                HitBlackHole(collision.gameObject);
+                break;
+            case "slide":
+                HitSlide(collision.gameObject);
+                break;
         }
     }
 
-    IEnumerator deleteSlide(GameObject other)
-    {
+    private void HitNewMultiplier() {
+        TeleportToBlackHoleExit();
+        PlaySound(ammoPlusAudio);
+        SlowProjectile(4f);
+        ClearTrail();
+    }
+
+    private void HitBlackHole(GameObject blackHolePeg) {
+        Destroy(blackHolePeg);
+        TeleportToBlackHoleExit();
+        PlaySound(blackHoleAudio);
+        SlowProjectile(2f);
+        ClearTrail();
+
+        if (shoot != null) {
+            shoot.lowerTutorialPegCount();
+        }
+    }
+
+    private void HitSlide(GameObject slide) {
+        PlaySound(popAudio);
+        StartCoroutine(deleteSlide(slide));
+    }
+
+    private void SpawnHitParticles(Vector3 position) {
+        if (ps == null || shoot == null || shoot.getSettingsOpen()) {
+            return;
+        }
+
+        Instantiate(ps, new Vector3(position.x, position.y, ps.transform.position.z), ps.transform.rotation);
+    }
+
+    private void SpawnArrowProjectile(string launcherName, Vector3 direction) {
+        if (ArrowProj == null) {
+            return;
+        }
+
+        GameObject launcherObject = GameObject.Find(launcherName);
+        if (launcherObject == null) {
+            return;
+        }
+
+        PlaySound(shootAudio);
+
+        GameObject spawnedBullet = Instantiate(ArrowProj, launcherObject.transform.position, Quaternion.identity);
+        Rigidbody2D arrowRb = spawnedBullet.GetComponent<Rigidbody2D>();
+
+        if (arrowRb != null) {
+            arrowRb.velocity = direction.normalized * ArrowProjectileSpeed;
+        }
+    }
+
+    private void TeleportToBlackHoleExit() {
+        if (blackHole == null) {
+            return;
+        }
+
+        ClearTrail();
+        transform.position = new Vector3(blackHole.position.x, blackHole.position.y, transform.position.z);
+    }
+
+    private void SlowProjectile(float divisor) {
+        if (rb == null || divisor <= 0f) {
+            return;
+        }
+
+        lastVelocity = rb.velocity / divisor;
+        rb.velocity = rb.velocity / divisor;
+    }
+
+    private void ClearTrail() {
+        TrailRenderer trailRenderer = GetComponent<TrailRenderer>();
+
+        if (trailRenderer != null) {
+            trailRenderer.Clear();
+        }
+    }
+
+    private void PlaySound(AudioSource audioSource) {
+        if (audioSource != null) {
+            audioSource.Play();
+        }
+    }
+
+    private IEnumerator deleteSlide(GameObject slide) {
         yield return new WaitForSeconds(0.5f);
-        Destroy(other.gameObject);
+
+        if (slide != null) {
+            Destroy(slide);
+        }
     }
 }

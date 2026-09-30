@@ -4,35 +4,47 @@ using UnityEngine;
 
 public class twoHitScript : MonoBehaviour
 {
-    private SpriteRenderer sr;
-    public Sprite[] sprites;
-    private Spawning spawn;
-    private int whichSprite;
+    [Header("Sprites")]
+    [SerializeField] private Sprite[] sprites;
 
-    // Start is called before the first frame update
-    void Start()
-    {
-        sr = GetComponent<SpriteRenderer>();
-        whichSprite = 0;
-        sr.sprite = sprites[whichSprite];
-        spawn = GameObject.Find("Spawner").GetComponent<Spawning>();
+    private SpriteRenderer spriteRenderer;
+    private Spawning spawn;
+    private int currentHitIndex;
+
+    private void Start() {
+        spriteRenderer = GetComponent<SpriteRenderer>();
+
+        GameObject spawnerObject = GameObject.Find("Spawner");
+        if (spawnerObject != null) {
+            spawn = spawnerObject.GetComponent<Spawning>();
+        }
+
+        currentHitIndex = 0;
+        UpdateSprite();
     }
 
-    public bool hit()
-    {
-        whichSprite++;
-        if (whichSprite < 2)
-        {
-            sr.sprite = sprites[whichSprite];
+    public bool hit() {
+        currentHitIndex++;
+
+        if (currentHitIndex < sprites.Length) {
+            UpdateSprite();
             return false;
         }
+
         return true;
     }
 
-    private void OnDestroy()
-    {
-        if (Shooter.gameOver == false)
-        {
+    private void UpdateSprite() {
+        if (spriteRenderer == null || sprites == null || sprites.Length == 0) {
+            return;
+        }
+
+        int spriteIndex = Mathf.Clamp(currentHitIndex, 0, sprites.Length - 1);
+        spriteRenderer.sprite = sprites[spriteIndex];
+    }
+
+    private void OnDestroy() {
+        if (!Shooter.gameOver && spawn != null) {
             spawn.reduceCount();
         }
     }

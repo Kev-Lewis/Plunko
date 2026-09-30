@@ -4,17 +4,18 @@ using UnityEngine;
 
 public class lightScript : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
-    {
-        GameObject lightGameObject = this.gameObject;
-        Light lightComp = lightGameObject.AddComponent<Light>();
-        lightComp.intensity = 1;
-    }
+    [Header("Light Settings")]
+    [SerializeField] private float intensity = 1f;
 
-    // Update is called once per frame
-    void Update()
-    {
-        
+    private Light lightComponent;
+
+    private void Start() {
+        lightComponent = GetComponent<Light>();
+
+        if (lightComponent == null) {
+            lightComponent = gameObject.AddComponent<Light>();
+        }
+
+        lightComponent.intensity = intensity;
     }
 }

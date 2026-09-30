@@ -5,41 +5,78 @@ using UnityEngine.SceneManagement;
 
 public class slide : MonoBehaviour
 {
-    private Shooter shoot;
-    private AudioSource audioClip;
-    private ProjScript proj;
+    [Header("Customization")]
     [SerializeField] private Sprite customSlide;
 
-    private void Start()
-    {
-        shoot = GameObject.Find("Shooter").GetComponent<Shooter>();
-        audioClip = GameObject.Find("pop").GetComponent<AudioSource>();
+    private Shooter shoot;
+    private AudioSource popAudio;
 
-        if(PlayerPrefs.GetInt("customSlide") == 1){
-            GetComponent<SpriteRenderer>().sprite = customSlide;
+    private void Start() {
+        CacheReferences();
+        ApplyCustomization();
+    }
+
+    private void CacheReferences() {
+        GameObject shooterObject = GameObject.Find("Shooter");
+        if (shooterObject != null) {
+            shoot = shooterObject.GetComponent<Shooter>();
+        }
+
+        GameObject popObject = GameObject.Find("pop");
+        if (popObject != null) {
+            popAudio = popObject.GetComponent<AudioSource>();
         }
     }
-    private void OnDestroy()
-    {
-        if(SceneManager.GetActiveScene().name == "infiniteLevel")
-        {
-            if (shoot.isShooting())
-            {
-                if (audioClip != null)
-                {
-                    audioClip.Play();
-                }
-                proj = GameObject.Find("Projectile(Clone)").GetComponent<ProjScript>();
-                proj.afterSlide();
-                //shoot.addScore(10);
-            }
-        }     
-        else if (SceneManager.GetActiveScene().name == "Tutorial2")
-        {
-            if (audioClip != null)
-            {
-                audioClip.Play();
-            }
+
+    private void ApplyCustomization() {
+        if (PlayerPrefs.GetInt("customSlide") != 1 || customSlide == null) {
+            return;
+        }
+
+        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
+        if (spriteRenderer != null) {
+            spriteRenderer.sprite = customSlide;
+        }
+    }
+
+    private void OnDestroy() {
+        string currentScene = SceneManager.GetActiveScene().name;
+
+        if (currentScene == "Tutorial2") {
+            PlayPopSound();
+            return;
+        }
+
+        if (currentScene != "infiniteLevel") {
+            return;
+        }
+
+        if (shoot == null || !shoot.isShooting()) {
+            return;
+        }
+
+        PlayPopSound();
+        AwardSlideScore();
+    }
+
+    private void PlayPopSound() {
+        if (popAudio != null) {
+            popAudio.Play();
+        }
+    }
+
+    private void AwardSlideScore() {
+        ProjScript mainProjectile = FindObjectOfType<ProjScript>();
+
+     if (mainProjectile != null) {
+            mainProjectile.afterSlide();
+            return;
+        }
+
+        arrowProjScript arrowProjectile = FindObjectOfType<arrowProjScript>();
+
+        if (arrowProjectile != null) {
+            arrowProjectile.afterSlide();
         }
     }
 }

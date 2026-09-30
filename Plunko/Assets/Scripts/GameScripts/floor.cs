@@ -4,11 +4,9 @@ using UnityEngine;
 
 public class floor : MonoBehaviour
 {
-    private void OnTriggerEnter2D(Collider2D col)
-    {
-        if (col.tag == "Ball")
-        {
-            Destroy(col.gameObject);
+    private void OnTriggerEnter2D(Collider2D collision) {
+        if (collision.CompareTag("Ball")) {
+            Destroy(collision.gameObject);
         }
     }
 }
